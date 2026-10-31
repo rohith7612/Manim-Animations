@@ -85,6 +85,7 @@ class BrollScene(MovingCameraScene):
         for shot in PLAN['scenes']:
             self.wait_to(shot['start'])
             group,objects=self.build(shot)
+            home_positions=[obj.get_center().copy() for obj in objects]
             hidden={c['index'] for c in shot['cues'] if c['action']=='add'}
             for i in hidden:objects[i].set_opacity(0)
             dt=min(.3,(shot['end']-shot['start'])/4)
@@ -98,7 +99,7 @@ class BrollScene(MovingCameraScene):
                 if dt<.04:continue
                 obj=objects[cue['index']];action=cue['action']
                 if action in ['add','restore']:
-                    self.play(obj.animate.set_opacity(1),run_time=dt)
+                    self.play(obj.animate.move_to(home_positions[cue['index']]).set_opacity(1),run_time=dt)
                 elif action=='remove':
                     motion=LEFT*1.6 if shot['kind']=='queue' else UP*1.2+RIGHT*.6
                     self.play(obj.animate.shift(motion).set_opacity(0),run_time=dt)

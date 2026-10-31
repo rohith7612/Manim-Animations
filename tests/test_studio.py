@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from backend.models import Plan
-from backend.planner import guided_plan
+from backend.planner import guided_plan, normalize_plan
 from backend import app as studio
 
 @pytest.fixture
@@ -72,3 +72,13 @@ def test_guided_planner_covers_narration():
     p=guided_plan(s,10)
     assert p.scenes[0].start==0 and p.scenes[-1].end==10
     assert p.scenes[0].kind=='plates'
+
+def test_normalization_preserves_start_cues_and_clamps_final_duration():
+    p=valid()
+    p['scenes'][0]['end']=9
+    p['scenes'].append({'start':4,'end':12,'kind':'queue','title':'Next','items':['1'],'cues':[{'time':5,'action':'remove','index':0}]})
+    result=normalize_plan(Plan.model_validate(p),7.8)
+    assert result.scenes[0].end==4
+    assert result.scenes[1].start==4
+    assert result.scenes[1].end==7.8
+    assert result.scenes[1].cues[0].time==5

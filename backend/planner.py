@@ -18,7 +18,30 @@ def ai_plan(segments, duration, key, model, direction):
         text_format=Plan)
     if response.output_parsed is None:
         raise ValueError('The AI planner did not return a scene plan. Try again or use the built-in planner.')
-    return response.output_parsed.check_timing(duration)
+    return normalize_plan(response.output_parsed,duration)
+
+def normalize_plan(plan,duration):
+    # Preserve proposed start cues. End each shot at the next start instead of
+    # accumulating model-rounded ends and shifting later narrated events.
+    ordered=sorted(plan.scenes,key=lambda s:s.start)
+    scenes=[]
+    for scene in ordered:
+        scene.start=max(0,min(scene.start,duration))
+        if scene.start>duration-.65:continue
+        if not scenes:scene.start=0
+        if scenes and scene.start-scenes[-1].start<.65:continue
+        scenes.append(scene)
+    if not scenes:raise ValueError('The planner returned no usable scenes.')
+    plan.scenes=scenes
+    for i,scene in enumerate(scenes):
+        scene.end=duration if i==len(scenes)-1 else scenes[i+1].start
+        scene.items=[item[:28] for item in scene.items]
+        scene.cues=sorted([c for c in scene.cues if scene.start+.3<=c.time<scene.end-.08 and c.index<len(scene.items)],key=lambda c:c.time)
+        spaced=[]
+        for cue in scene.cues:
+            if not spaced or cue.time-spaced[-1].time>=.25:spaced.append(cue)
+        scene.cues=spaced
+    return plan.check_timing(duration)
 
 def guided_plan(segments,duration):
     # An explicitly labelled offline alternative, not an AI-generated result.
