@@ -15,7 +15,9 @@ class VisualObject(BaseModel):
     x: float = Field(ge=-16,le=16)
     y: float = Field(ge=-12,le=12)
     width: float = Field(gt=0,le=32)
-    height: float = Field(gt=0,le=24)
+    # A valid 20-unit camera in portrait has a 35.56-unit height; artwork
+    # overscan adds 16%. Keep backgrounds bounded while allowing that viewport.
+    height: float = Field(gt=0,le=48)
     color: str = Field(pattern=r'^#[0-9A-Fa-f]{6}$')
     opacity: float = Field(ge=0,le=1)
     layer: int = Field(ge=-20,le=30)

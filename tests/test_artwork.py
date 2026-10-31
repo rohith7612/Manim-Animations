@@ -70,3 +70,21 @@ def test_artwork_planner_places_declared_background_and_drops_unused_cutouts():
     result=normalize_plan(p,8,aspect='landscape')
     assert [a.id for a in result.artwork]==['backdrop']
     assert any(o.shape=='image' and o.asset_id=='backdrop' for o in result.scenes[0].illustration.objects)
+
+@pytest.mark.parametrize('camera_width',[14,20])
+@pytest.mark.parametrize('route',['prepare','normalize'])
+def test_portrait_background_covers_valid_wide_camera(camera_width,route):
+    from backend.planner import normalize_plan
+    p=Plan.model_validate(water_cycle([],8,'portrait'))
+    data=p.scenes[0].illustration
+    data.camera_width=camera_width;data.camera_end_width=camera_width
+    if route=='prepare':
+        result=prepare_plan(p,[{'text':'The water cycle with evaporation and condensation.'}],'portrait')
+    else:
+        p.artwork=[ArtworkAsset(id='background',role='background',aspect='portrait',prompt='A detailed coastal mountain landscape for a portrait animation.')]
+        result=normalize_plan(p,8,aspect='portrait')
+    result=Plan.model_validate(result.model_dump()).check_timing(8)
+    bg=next(o for o in result.scenes[0].illustration.objects if o.shape=='image')
+    assert bg.height==pytest.approx(camera_width*1.16*16/9)
+    assert bg.height>=camera_width*16/9
+    assert bg.height<=48
