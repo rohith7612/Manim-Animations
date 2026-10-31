@@ -1,62 +1,111 @@
 # Framecraft
 
-A working local video-to-animated-B-roll studio with a private hosted interface preview.
+**Turn a narrated video into synchronized, code-generated educational animation.**
 
-## Start on this computer
+Upload a talking-head or voice-over video. Framecraft transcribes it with word-level timing, plans one visual "beat" per idea, and renders animated B-roll with [Manim](https://www.manim.community/). Each visual appears on the word that introduces it. Everything on screen is drawn from code, with no image or video generation.
 
-Run `start.ps1` in PowerShell, then open http://127.0.0.1:8765.
+![Lesson layouts rendered by Framecraft](docs/lesson-layouts.jpg)
 
-1. Open Settings and enter your OpenAI API key. It stays in server memory. Alternatively select the built-in planner to work without an API key.
-2. Upload a narrated video (200 MB maximum, 3 minutes maximum).
-3. Choose portrait or landscape, and preview or full-HD output. AI automatically selects the palette, mood, motion character, background, composition, and camera treatment from the narration's tone and subject. There is no visual-style picker.
-4. Create the scene plan. Review the transcript and storyboard. Use Edit plan to adjust exact labels, scene types, and action timestamps.
-5. Render. Download the MP4 with original audio, silent MP4, Manim source, transcript, and scene plan.
+## Features
 
-## AI-generated artwork
+- **Accurate, word-timed transcripts.** `gpt-transcribe` produces the text and `whisper-1` provides word timestamps. The two are aligned word by word, so a corrected term like "LIFO" keeps the timing of what was actually heard. A proofreading pass fixes misheard technical terms and lists the key terms viewers should see.
+- **Transcript review.** Edit any line and the key-term list before planning. Edited words keep their original timing.
+- **Word-synced lesson beats.** The planner splits the narration into one-idea beats and names the spoken word that triggers each visual. The code converts that word into its exact timestamp, so the AI never guesses times.
+- **Nine teaching layouts:** title, key term, list, comparison bars, roadmap, diagram, code snippet, stack/plates/queue analogy, and stat counter.
+- **Coverage check.** Spoken key terms that never appear on screen trigger an automatic revision, and any that remain are flagged in the storyboard.
+- **Optional procedural 3D.** The *Force 3D* option renders with Three.js and custom GLSL in headless Chrome. The water-cycle scene uses this engine automatically.
+- **Works offline too.** Without an API key it falls back to local Faster-Whisper transcription and a built-in rule-based planner.
+- **Exports:** MP4 with the original narration, silent MP4, Manim source or code-only 3D source ZIP, SRT transcript, and the scene plan as JSON.
 
-New uploads enable custom artwork by default. AI plans up to four reusable assets per project: full illustrated backgrounds and isolated transparent objects. It chooses their appearance from the automatic art direction. Turn off Generate custom AI artwork to keep a vector-only workflow without image API charges.
+## How it works
 
-After scene planning, use Generate artwork to review assets in the gallery before rendering, or render directly to generate the requested artwork as part of the render task. Editing asset prompts in Edit plan changes the cache key. Unchanged prompts, model, quality, and size reuse cached images across local projects. Partial successes are cached too, so retrying does not regenerate completed images unnecessarily.
+```
+video ─► transcript (text model + timing model, aligned) ─► review & edit
+      ─► lesson plan (beats → layouts → items anchored to spoken words)
+      ─► coverage check ─► Manim render (or Three.js) ─► mux original audio ─► MP4
+```
 
-Settings includes the image model (default `gpt-image-2.5-flare`) and low/medium/high artwork quality. The selected model must be available to your OpenAI account and support transparent PNGs for cutouts. Image generation uses your API key, adds API charges, and can take several minutes. No automatic model substitution occurs. Backgrounds and cutouts share a common art-direction brief; consistency is not guaranteed across separate generations.
+| Module | Role |
+| --- | --- |
+| `backend/transcript.py` | OpenAI transcription, word alignment, sentence grouping, proofreading |
+| `backend/lesson.py` | Beat planner prompt, word-index → time resolution, key-term coverage |
+| `backend/lesson_renderer.py` | Manim scene that draws the nine layouts on the word timeline |
+| `backend/app.py` | FastAPI service, SQLite project store, single-worker job queue |
+| `backend/planner.py`, `renderer.py`, `nature.py` | Built-in planner and the original template renderer |
+| `backend/cinematic.py`, `cinema/` | Optional Three.js procedural 3D renderer |
+| `dist/` | Static web UI (no build step) |
 
-The renderer animates generated image layers together with vector particles, clouds, camera moves, and precise diagrams. A moving layer is not a deforming 3D object or generative video. Download Source + artwork ZIP for a runnable Python source bundle containing the images, plan, and asset prompts. API keys are never included. Generated images stay in local `data/`; only the explicitly included demo is bundled with the hosted preview.
+## Requirements
 
-An actual rendered example of the stack lesson is included. New projects use the reusable renderer and are not copies of that example's hand-authored animation.
+- Python 3.12+
+- [Manim Community](https://docs.manim.community/en/stable/installation.html) 0.19+ (in the same environment, or a separate one set with `MANIM_PYTHON`)
+- Optional: an OpenAI API key, for accurate transcription and AI planning
+- Optional, for Force 3D only: Node.js 22.12+ and Chrome or Edge
 
-## Technologies
+## Quick start
 
-Python/FastAPI API; SQLite project records; local disk uploads and exports; single-worker processing queue; Faster-Whisper Small (CPU/int8) word timestamps; NumPy audio processing; OpenAI Responses API structured scene planning; Manim Community rendering; PyAV decoding/audio muxing; Pillow posters; responsive HTML/CSS/JavaScript frontend.
+```bash
+git clone <your-repo-url> framecraft
+cd framecraft
+cp .env.example .env        # then add OPENAI_API_KEY (optional)
+```
 
-OpenAI receives the timestamped transcript and creative direction, not the uploaded video. Transcription runs locally. Mood is inferred from the narration's language, rather than acoustic emotion analysis. The model returns validated data, never executable Python. Its art-direction decision is shown with the storyboard. The built-in planner uses a clearly labelled keyword-based fallback when AI planning is disabled.
+Windows (PowerShell):
 
-The renderer now also accepts open visual compositions: positioned shapes, custom polygons and paths, layered scenery, particles, repeatable object motion, and camera tracks. AI can design an actual landscape, mechanism, molecular model, or other scene rather than selecting a text-card template. Illustration shots contain no on-screen text. These scenes use bounded, validated geometry and motion data; arbitrary model-written Python is never executed.
+```powershell
+.\start.ps1
+```
 
-The built-in planner includes a water-cycle reference scene with sunlight, evaporation particles, cloud formation, rain, and runoff. AI planning can compose its own worlds using the illustration schema for science, nature, mechanisms, and other subjects. The included 24-second water-cycle video is a silent capability demo, not a render of a user-provided water-cycle narration.
+macOS / Linux:
 
-This is stylized 2D/2.5D animation with layered scenery and camera movement. It is not a photorealistic 3D engine, a fluid simulation, or an unrestricted text-to-video generator. Blender rendering and imported/generated art assets would be separate extensions. Existing computer-science scene types remain available for appropriate topics.
+```bash
+chmod +x start.sh && ./start.sh
+```
+
+On first run, the start script creates `.venv`, installs `requirements.txt`, and builds the 3D renderer if Node.js is available. Then open <http://127.0.0.1:8765>.
+
+Install Manim into the environment that renders, for example `.venv/Scripts/python -m pip install manim` on Windows or `.venv/bin/python -m pip install manim` elsewhere. If Manim is already installed somewhere else, set `MANIM_PYTHON` instead.
+
+## Using the studio
+
+1. **Upload** a narrated video (up to 200 MB and 3 minutes). Choose the canvas (9:16 or 16:9), quality (540p preview or 1080p), and planner.
+2. **Review the transcript.** Fix any misheard word, adjust the key terms, then click **Approve transcript & plan**.
+3. **Review the storyboard.** Each beat lists its layout and synced items, and a banner reports key-term coverage. Advanced edits are available in **Edit plan** (validated JSON).
+4. **Render**, then download the MP4 with narration.
+
+Existing projects can be **retranscribed**, **replanned**, or **replanned in 3D** at any time.
 
 ## Configuration
 
-- `OPENAI_API_KEY`: optional server environment key instead of Settings.
-- `OPENAI_MODEL`: planning model, defaults to `gpt-4.1-mini`; adjustable in Settings.
-- `OPENAI_IMAGE_MODEL`: image model, defaults to `gpt-image-2.5-flare`.
-- `OPENAI_IMAGE_QUALITY`: `low`, `medium`, or `high`; defaults to `low`.
-- `MANIM_PYTHON`: Python executable with Manim installed. On this machine it automatically discovers `~/manimations/.venv/Scripts/python.exe`.
-- `WHISPER_MODEL`: defaults to `small`. First use downloads the model if it is not cached.
-- `WHISPER_CACHE`: defaults to the existing `.whisper-models` directory beside this project.
-- `FRAMECRAFT_DATA`: upload/project/output directory, defaults to `data/` (ignored by source control).
+All settings are optional environment variables, and they can be placed in `.env`:
 
-For another machine: use Python 3.12+, install requirements.txt and Manim with its native dependencies, then run `python -m uvicorn backend.app:app --host 127.0.0.1 --port 8765`. Set MANIM_PYTHON when the renderer uses another environment. Use one server process; the included queue is for a personal studio, not a distributed production worker.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | – | Enables OpenAI transcription and planning. It can also be entered in Settings, where it is kept in memory only. |
+| `OPENAI_MODEL` | `gpt-5.5` | Planning model |
+| `FRAMECRAFT_PYTHON` | `.venv` | Python used by the start scripts |
+| `MANIM_PYTHON` | current Python | Python with Manim installed |
+| `FRAMECRAFT_NODE` | `node` on PATH | Node.js 22.12+ for 3D rendering |
+| `FRAMECRAFT_BROWSER` | auto-detected | Chrome/Edge executable for 3D rendering |
+| `FRAMECRAFT_DATA` | `./data` | Projects, renders and caches |
+| `FRAMECRAFT_PORT` | `8765` | Local port |
+| `WHISPER_MODEL` / `WHISPER_CACHE` | `small` / `./.whisper-models` | Local transcription fallback |
 
-## Hosted interface
+The service binds to `127.0.0.1` only, rejects cross-origin mutations, never returns the API key, and never executes AI-generated code. Plans are validated data that a trusted renderer interprets.
 
-The private Sites deployment hosts the interface and a playable real example. It does not run Python or Manim. Its Open local studio button opens the installed local service. To support remote customers, deploy the Python service on compute with Cairo/Pango and Manim, add authentication, tenant-separated storage, upload limits at the reverse proxy, and an external durable worker queue. No remote Python service has been deployed as part of this local build.
+## Development
 
-## Development checks
+```bash
+python -m pip install -r requirements-dev.txt
+npm ci && npm run build:cinema     # only needed for the 3D tests/renderer
+python -m pytest tests -q
+npm run test:cinema
+```
 
-Install requirements-dev.txt, then run `python -m pytest tests -q`.
+`scripts/publish_cinema_demo.py` refreshes the bundled 3D example in `dist/assets` from a locally rendered `cinema-demo` project.
 
-`setup_sample.py` installs the existing local stack output as the example. It is specific to the source video and files from this workspace. The app works for new uploads without it.
+## Limitations
 
-Keys entered in Settings are cleared when the process restarts. Projects remain on disk. Interrupted jobs are marked with a retryable error on restart. Rendering has a 30-minute timeout. Inputs are treated as media/data; uploaded filenames never become executable commands. No endpoint accepts generated Python to execute.
+- Plan quality depends on the planning model. Review the storyboard before rendering, especially for ambiguous transcript lines.
+- The 3D renderer produces stylized procedural scenes. It is not a physics simulator or a detailed model generator.
+- This is a single-user local tool. A hosted multi-user deployment would need authentication, isolated storage and dedicated render workers.

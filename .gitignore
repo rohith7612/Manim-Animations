@@ -1,14 +1,30 @@
-data/
-.venv/
-.pytest_cache/
-__pycache__/
-*.pyc
-*.log
-.test-temp*/
-integration-job.txt
-ai-integration-job.txt
-ai-render-check.jpg
+# Local configuration and secrets
 .env
 .env.*
-.openai/*token*
 !.env.example
+
+# Projects, renders, caches and models (can be large and personal)
+data/
+.whisper-models/
+render-cache/
+media/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.test-temp*/
+
+# Node and build output
+node_modules/
+dist/cinema/
+
+# Logs and tooling
+*.log
+.openai/
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

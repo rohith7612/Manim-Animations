@@ -17,14 +17,23 @@ Every illustration must include motions that SHOW the narrated process, not just
 Water-cycle example: draw a sun, ocean, distant hills, mountains, trees and clouds; water particles rise from the ocean when evaporation is spoken, gather into clouds on condensation, fall as rain on precipitation, and flow downhill into the sea for runoff/collection. Keep runoff on the land surface and vapor rising. Do not just draw arrows with process names. For other subjects, design the corresponding actual objects and movement.
 Camera start/end centers and widths must keep important objects in view. Use wide establishing view then a small camera drift. Portrait scenes fit x=-4..4,y=-6..6 (camera width about 9); landscape scenes fit x=-8..8,y=-4..4 (camera width about 16).
 
-When generate_artwork=true, design up to FOUR reusable AI artwork assets in the plan.artwork list. Each asset has id, role (background or cutout), aspect, and a detailed production prompt. Choose artwork automatically to support the concept and art direction. For illustrated worlds use one richly painted background, with one or two transparent hero subjects as needed. Use shape=image and asset_id to place those assets in illustration.objects; set points=[], color=#FFFFFF. Backgrounds should cover the camera frame, layer=-8, and all animated foreground subjects should be explicitly absent from the background prompt to avoid duplicates. Do not also draw vector scenery over a generated background. Keep vector particles, rain, paths, and accurate educational diagrams where they provide precision. Animate cutouts using the existing object-motion timeline, and use gentle camera motion over backgrounds. Assets reuse the same IDs across scenes. Transparent cutout prompts must request an isolated subject with real transparency and padding. No labels or embedded text. Set asset_id='' on vector objects. For exact algorithms/equations, artwork is optional; do not add irrelevant images just to use the budget.
-When generate_artwork=false, return artwork=[] and no image objects. Never make up file paths or URLs.'''
+CODE-ONLY REQUIREMENT: Return artwork=[] and never use shape=image, asset_id, image prompts, external models, textures, photographs or video generation. All visuals must be generated from geometry, materials, shaders, and particles. When cinema is present, scenes are storyboard metadata only: use kind=flow, illustration=null, cues=[], and short items. Do not duplicate 3D geometry in the legacy 2D illustration field.
+For physical/natural/space/mechanism scenes, provide a cinema world so the Three.js renderer can produce real 3D. For exact algorithms, equations, and abstract diagrams, cinema=null keeps Manim. Do not force every subject into a landscape.
+Cinema world options: landscape is a procedural coastal mountain environment with shaded terrain, forests, shader-based ocean, river, volumetric clouds, and weather. It is suitable for water cycle, coastal climate, rain, weather, evaporation, and runoff explanations. space and studio use the objects/motions lists to build a custom scene. For unrelated subjects choose studio or space and construct actual objects, not a generic landscape.
+Each cinema object has id, shape sphere/box/cone/cylinder/torus/plane, position [x,y,z], scale [width,height,depth], #hex color, roughness, metalness and opacity. Compose multiple shapes for anatomy, mechanisms, molecules, planets, etc. 3D motions have target, action move/rotate/pulse/reveal/hide, absolute start/end, path=[[x,y,z],...], repeats and amount. No arbitrary code or URLs.
+Camera shots must cover 0..duration consecutively, with start/end, position/end_position, target/end_target, and fov 25..80. Use a purposeful mix of wide, detail, and tracking shots, typically 3-6 seconds. Landscape coordinates: ocean x<0; land x>0; main mountain near [11,8,-10]; clouds near [4,8,-6]; sea near [-8,0,0]; river from [11,7,-11] toward [1,0,7]. Put the camera above ground and looking toward these features, usually z>8. Portrait framing needs a wider field of view or a more distant camera.
+Physical stages are evaporation/condensation/rain/runoff, with absolute start/end and intensity 0..1. Match them to narrated words. Keep condensation active after clouds form; rain and runoff should follow the explanation. objects=[] and motions=[] are fine for the procedural landscape because it already builds the physical world. Use objects/motions for custom studio/space subjects. Minimal optional overlays (text, start, end, position top_left/bottom_left) are rendered by Manim, not embedded in artwork. Prefer 0-3 short overlays; keep the footage visually driven. Choose a deterministic seed. cinema=null is acceptable when the scene should remain a precise Manim diagram.
+'''
 
-def ai_plan(segments, duration, key, model, direction, aspect='portrait', artwork=False):
+FORCE_3D='''
+FORCE 3D: the user requires a real 3D film. You MUST return a cinema world; cinema=null is not allowed. For abstract or programming topics use world=studio and build physical metaphors from primitive shapes (stacked boxes for a stack, flat cylinders for plates, a row of figures for a queue, glowing spheres for concepts) with motions that act out each narrated cue.
+'''
+
+def ai_plan(segments, duration, key, model, direction, aspect='portrait', artwork=False, force_3d=False):
     client=OpenAI(api_key=key,timeout=90,max_retries=1)
     response=client.responses.parse(model=model,store=False,
-        input=[{'role':'system','content':SYSTEM},
-               {'role':'user','content':json.dumps({'duration':duration,'aspect':aspect,'generate_artwork':artwork,'direction':direction,'transcript':segments},ensure_ascii=False)}],
+        input=[{'role':'system','content':SYSTEM+(FORCE_3D if force_3d else '')},
+               {'role':'user','content':json.dumps({'duration':duration,'aspect':aspect,'code_only':True,'direction':direction,'transcript':segments},ensure_ascii=False)}],
         text_format=DirectedPlan)
     if response.output_parsed is None:
         raise ValueError('The AI planner did not return a scene plan. Try again or use the built-in planner.')
@@ -70,6 +79,19 @@ def normalize_plan(plan,duration,segments=None,aspect='portrait'):
         for cue in scene.cues:
             if not spaced or cue.time-spaced[-1].time>=.25:spaced.append(cue)
         scene.cues=spaced
+    if plan.cinema:
+        shots=sorted(plan.cinema.shots,key=lambda s:s.start)
+        shots=[s for s in shots if s.start<duration-.05]
+        for i,shot in enumerate(shots):
+            shot.start=0 if i==0 else max(0,shot.start)
+            shot.end=duration if i==len(shots)-1 else shots[i+1].start
+        plan.cinema.shots=shots
+        for name in ['stages','motions','overlays']:
+            values=getattr(plan.cinema,name);valid=[]
+            for item in values:
+                item.start=max(0,item.start);item.end=min(duration,item.end)
+                if item.end>item.start:valid.append(item)
+            setattr(plan.cinema,name,valid)
     backgrounds=[a for a in plan.artwork if a.role=='background']
     if len(backgrounds)==1:
         from .models import VisualObject
