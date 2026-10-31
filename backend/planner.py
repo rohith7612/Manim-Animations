@@ -15,19 +15,22 @@ Direct each shot with composition hero/cascade/orbit/split, camera wide/close/tr
 IMPORTANT: For science, nature, geography, mechanisms, anatomy, astronomy, and other topics not literally covered by the eight older scene types, use kind=illustration. Do NOT return flow icons or labels instead of the real subject. Design the actual world from visual objects. This is an open composition, not a fixed water-cycle template. Combine circle/ellipse/rectangle/polygon/path primitives with sun/cloud/droplet/mountain/water/tree/molecule/gear/star motifs. Molecules, planets, cells, vessels, or machines can be composed from primitives. Every object needs a unique ID, x/y center, width/height, #hex color, opacity, layer and points (empty unless polygon/path). Polygon/path points are local coordinates, scaled to the object's dimensions. Negative layers are distant scenery; positive layers are foreground. Use coherent scenic colors inside the illustration independent of the UI theme.
 Every illustration must include motions that SHOW the narrated process, not just a still picture. Use flow for repeated particles along absolute x/y path points, move for object travel, rotate for machinery/sun rays, pulse for gentle emphasis, reveal/hide for formation/dissolution. Motion start/end are absolute video times, target is the exact object ID, repeats is an integer, amount is radians for rotate or scale delta for pulse (e.g. .04). Provide path=[] for non-travel actions. 12-35 objects and 8-35 motions usually suffice. Keep text out of the illustration. Use a single continuous landscape for a connected process rather than repeatedly cutting to disconnected stages. Use cues=[] and items=['Scene'] for illustration shots; motions are the action timeline.
 Water-cycle example: draw a sun, ocean, distant hills, mountains, trees and clouds; water particles rise from the ocean when evaporation is spoken, gather into clouds on condensation, fall as rain on precipitation, and flow downhill into the sea for runoff/collection. Keep runoff on the land surface and vapor rising. Do not just draw arrows with process names. For other subjects, design the corresponding actual objects and movement.
-Camera start/end centers and widths must keep important objects in view. Use wide establishing view then a small camera drift. Portrait scenes fit x=-4..4,y=-6..6 (camera width about 9); landscape scenes fit x=-8..8,y=-4..4 (camera width about 16).'''
+Camera start/end centers and widths must keep important objects in view. Use wide establishing view then a small camera drift. Portrait scenes fit x=-4..4,y=-6..6 (camera width about 9); landscape scenes fit x=-8..8,y=-4..4 (camera width about 16).
 
-def ai_plan(segments, duration, key, model, direction, aspect='portrait'):
+When generate_artwork=true, design up to FOUR reusable AI artwork assets in the plan.artwork list. Each asset has id, role (background or cutout), aspect, and a detailed production prompt. Choose artwork automatically to support the concept and art direction. For illustrated worlds use one richly painted background, with one or two transparent hero subjects as needed. Use shape=image and asset_id to place those assets in illustration.objects; set points=[], color=#FFFFFF. Backgrounds should cover the camera frame, layer=-8, and all animated foreground subjects should be explicitly absent from the background prompt to avoid duplicates. Do not also draw vector scenery over a generated background. Keep vector particles, rain, paths, and accurate educational diagrams where they provide precision. Animate cutouts using the existing object-motion timeline, and use gentle camera motion over backgrounds. Assets reuse the same IDs across scenes. Transparent cutout prompts must request an isolated subject with real transparency and padding. No labels or embedded text. Set asset_id='' on vector objects. For exact algorithms/equations, artwork is optional; do not add irrelevant images just to use the budget.
+When generate_artwork=false, return artwork=[] and no image objects. Never make up file paths or URLs.'''
+
+def ai_plan(segments, duration, key, model, direction, aspect='portrait', artwork=False):
     client=OpenAI(api_key=key,timeout=90,max_retries=1)
     response=client.responses.parse(model=model,store=False,
         input=[{'role':'system','content':SYSTEM},
-               {'role':'user','content':json.dumps({'duration':duration,'aspect':aspect,'direction':direction,'transcript':segments},ensure_ascii=False)}],
+               {'role':'user','content':json.dumps({'duration':duration,'aspect':aspect,'generate_artwork':artwork,'direction':direction,'transcript':segments},ensure_ascii=False)}],
         text_format=DirectedPlan)
     if response.output_parsed is None:
         raise ValueError('The AI planner did not return a scene plan. Try again or use the built-in planner.')
-    return normalize_plan(response.output_parsed,duration,segments)
+    return normalize_plan(response.output_parsed,duration,segments,aspect)
 
-def normalize_plan(plan,duration,segments=None):
+def normalize_plan(plan,duration,segments=None,aspect='portrait'):
     # Preserve proposed start cues. End each shot at the next start instead of
     # accumulating model-rounded ends and shifting later narrated events.
     ordered=sorted(plan.scenes,key=lambda s:s.start)
@@ -67,6 +70,18 @@ def normalize_plan(plan,duration,segments=None):
         for cue in scene.cues:
             if not spaced or cue.time-spaced[-1].time>=.25:spaced.append(cue)
         scene.cues=spaced
+    backgrounds=[a for a in plan.artwork if a.role=='background']
+    if len(backgrounds)==1:
+        from .models import VisualObject
+        background=backgrounds[0]
+        for scene in plan.scenes:
+            data=scene.illustration
+            if data and not any(o.shape=='image' and o.asset_id==background.id for o in data.objects):
+                width=max(data.camera_width,data.camera_end_width)*1.16
+                if len(data.objects)<70:
+                    data.objects.insert(0,VisualObject(id='art_background',shape='image',asset_id=background.id,x=data.camera_x,y=data.camera_y,width=width,height=width*(16/9 if aspect=='portrait' else 9/16),color='#FFFFFF',opacity=1,layer=-8,points=[]))
+    used_assets={o.asset_id for s in plan.scenes if s.illustration for o in s.illustration.objects if o.shape=='image'}
+    plan.artwork=[asset for asset in plan.artwork if asset.id in used_assets]
     return plan.check_timing(duration)
 
 def guided_plan(segments,duration,aspect='portrait'):

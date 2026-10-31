@@ -30,7 +30,17 @@ config.frame_rate=30
 class BrollScene(MovingCameraScene):
     def visual_object(self,spec):
         shape=spec['shape'];c=spec['color'];w=spec['width'];h=spec['height']
-        if shape=='sun':
+        if shape=='image':
+            asset_id=spec.get('asset_id','')
+            if not asset_id or any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for ch in asset_id):raise ValueError('Invalid artwork identifier.')
+            image_path=Path(__file__).resolve().parent/'artwork'/(asset_id+'.png')
+            if not image_path.is_file():raise ValueError('Generate the requested artwork before rendering this scene.')
+            obj=ImageMobject(str(image_path))
+            role=next((a['role'] for a in PLAN.get('artwork',[]) if a['id']==asset_id),'cutout')
+            factor=max(w/obj.width,h/obj.height) if role=='background' else min(w/obj.width,h/obj.height)
+            obj.scale(factor).move_to([spec['x'],spec['y'],0]).set_opacity(spec['opacity']).set_z_index(spec['layer'])
+            return obj
+        elif shape=='sun':
             rays=VGroup(*[Line(np.array([np.cos(a),np.sin(a),0])*.65,np.array([np.cos(a),np.sin(a),0])*.85,color=c,stroke_width=4) for a in np.linspace(0,TAU,12,endpoint=False)])
             body=Circle(radius=.48,stroke_width=0,fill_color=c,fill_opacity=1)
             glow=VGroup(*[Circle(radius=.52+i*.045,stroke_width=0,fill_color=c,fill_opacity=.025) for i in range(8,0,-1)])
@@ -65,7 +75,7 @@ class BrollScene(MovingCameraScene):
 
     def play_illustration(self,shot,active):
         data=shot['illustration'];start=shot['start'];end=shot['end']
-        world=VGroup(Rectangle(width=80,height=60,fill_color=data['background'],fill_opacity=1,stroke_width=0).set_z_index(-9))
+        world=Group(Rectangle(width=80,height=60,fill_color=data['background'],fill_opacity=1,stroke_width=0).set_z_index(-9))
         objects={o['id']:self.visual_object(o) for o in data['objects']}
         originals={key:obj.copy() for key,obj in objects.items()}
         world.add(*objects.values())

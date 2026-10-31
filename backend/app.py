@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import subprocess
 import threading
+import zipfile
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from pydantic import BaseModel, Field, SecretStr
 from .models import Plan
 from .media import inspect, audio_samples, mux, poster, srt
 from .planner import ai_plan, guided_plan, infer_direction
+from .artwork import generate as generate_artwork, prepare_plan, DEFAULT_IMAGE_MODEL
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('FRAMECRAFT_DATA',ROOT/'data')).resolve()
@@ -26,7 +28,7 @@ POOL=ThreadPoolExecutor(max_workers=1)
 LOCK=threading.Lock()
 MODEL_LOCK=threading.Lock()
 MODEL=None
-SETTINGS={'key':os.environ.get('OPENAI_API_KEY',''),'model':os.environ.get('OPENAI_MODEL','gpt-4.1-mini')}
+SETTINGS={'key':os.environ.get('OPENAI_API_KEY',''),'model':os.environ.get('OPENAI_MODEL','gpt-4.1-mini'),'image_model':os.environ.get('OPENAI_IMAGE_MODEL',DEFAULT_IMAGE_MODEL),'image_quality':os.environ.get('OPENAI_IMAGE_QUALITY','low')}
 MAX_BYTES=200*1024*1024
 
 def connection():
@@ -51,7 +53,7 @@ async def lifespan(app):
     with connection() as c:rows=c.execute('SELECT payload FROM jobs').fetchall()
     for row in rows:
         j=json.loads(row[0])
-        if j['status'] in ['queued','transcribing','planning','rendering']:
+        if j['status'] in ['queued','transcribing','planning','artwork','rendering']:
             update(j['id'],status='error',error='The service restarted. Retry this project to continue.')
     yield
 
@@ -72,16 +74,20 @@ async def local_boundary(request,call_next):
 
 @app.get('/api/health')
 def health():
-    return {'ok':True,'api_key_configured':bool(SETTINGS['key']),'model':SETTINGS['model'],'renderer':bool(renderer_python())}
+    return {'ok':True,'api_key_configured':bool(SETTINGS['key']),'model':SETTINGS['model'],'image_model':SETTINGS['image_model'],'image_quality':SETTINGS['image_quality'],'renderer':bool(renderer_python())}
 
 class Settings(BaseModel):
     api_key: SecretStr | None = None
     model: str = Field(default='gpt-4.1-mini',max_length=100,pattern=r'^[a-zA-Z0-9._:-]+$')
+    image_model: str = Field(default=DEFAULT_IMAGE_MODEL,max_length=100,pattern=r'^[a-zA-Z0-9._:-]+$')
+    image_quality: str = Field(default='low',pattern=r'^(low|medium|high)$')
 @app.post('/api/settings')
 def settings(body:Settings):
     if body.api_key is not None:SETTINGS['key']=body.api_key.get_secret_value().strip()
     SETTINGS['model']=body.model
-    return {'configured':bool(SETTINGS['key']),'model':SETTINGS['model']}
+    SETTINGS['image_model']=body.image_model
+    SETTINGS['image_quality']=body.image_quality
+    return {'configured':bool(SETTINGS['key']),'model':SETTINGS['model'],'image_model':SETTINGS['image_model'],'image_quality':SETTINGS['image_quality']}
 
 @app.get('/api/projects')
 def projects():
@@ -119,8 +125,10 @@ def analyze(id,key,model):
         update(id,status='planning',progress=42,transcript=segments)
         if job['planner']=='openai':
             if not key:raise ValueError('Add an OpenAI API key in Settings, or choose the built-in planner.')
-            plan=ai_plan(segments,job['duration'],key,model,job['direction'],job.get('aspect','portrait'))
+            plan=ai_plan(segments,job['duration'],key,model,job['direction'],job.get('aspect','portrait'),job.get('artwork_enabled',False))
         else:plan=guided_plan(segments,job['duration'],job.get('aspect','portrait'))
+        if job.get('artwork_enabled'):plan=prepare_plan(plan,segments,job.get('aspect','portrait'))
+        elif plan.artwork:raise ValueError('The plan requested artwork while artwork generation is off. Retry scene planning.')
         art=plan.art_direction or infer_direction(segments)
         update(id,status='review',progress=60,plan=plan.model_dump(),style=art.palette,art_direction=art.model_dump())
     except Exception as e:
@@ -133,11 +141,12 @@ def analyze(id,key,model):
         update(id,status='error',error=message)
 
 @app.post('/api/projects')
-async def create(file:UploadFile=File(...),aspect:str=Form('portrait'),quality:str=Form('preview'),planner:str=Form('openai'),direction:str=Form('')):
+async def create(file:UploadFile=File(...),aspect:str=Form('portrait'),quality:str=Form('preview'),planner:str=Form('openai'),direction:str=Form(''),artwork_enabled:bool=Form(True)):
     if aspect not in ['portrait','landscape'] or quality not in ['preview','final'] or planner not in ['openai','guided']:
         raise HTTPException(422,'Choose valid project settings.')
     if len(direction)>2000:raise HTTPException(422,'Keep the creative direction under 2,000 characters.')
     if planner=='openai' and not SETTINGS['key']:raise HTTPException(400,'Add your API key in Settings first, or select the built-in planner.')
+    if artwork_enabled and not SETTINGS['key']:raise HTTPException(400,'Add an OpenAI key to generate artwork, or turn artwork off.')
     id=uuid.uuid4().hex;path=DATA/id;path.mkdir()
     try:
         size=0
@@ -148,7 +157,7 @@ async def create(file:UploadFile=File(...),aspect:str=Form('portrait'),quality:s
                 f.write(chunk)
         meta=inspect(path/'input.mp4')
         if not meta['has_audio']:raise ValueError('Upload a video with narration.')
-        job={'id':id,'name':Path(file.filename or 'Untitled video').stem[:100],**meta,'style':'auto','art_direction':None,'aspect':aspect,'quality':quality,'planner':planner,'direction':direction,'status':'queued','progress':2,'transcript':None,'plan':None,'error':None,'sample':False}
+        job={'id':id,'name':Path(file.filename or 'Untitled video').stem[:100],**meta,'style':'auto','art_direction':None,'aspect':aspect,'quality':quality,'planner':planner,'direction':direction,'artwork_enabled':artwork_enabled,'artwork_assets':[],'status':'queued','progress':2,'transcript':None,'plan':None,'error':None,'sample':False}
         save(job);POOL.submit(analyze,id,SETTINGS['key'],SETTINGS['model']);return job
     except Exception as e:
         shutil.rmtree(path,ignore_errors=True)
@@ -164,9 +173,31 @@ def edit_plan(id:str,body:PlanBody):
     try:body.plan.check_timing(job['duration'])
     except ValueError as e:raise HTTPException(422,str(e))
     art=body.plan.art_direction or infer_direction(job.get('transcript') or [])
-    return update(id,plan=body.plan.model_dump(),style=art.palette,art_direction=art.model_dump(),status='review',progress=60,error=None)
+    return update(id,plan=body.plan.model_dump(),style=art.palette,art_direction=art.model_dump(),artwork_assets=[],status='review',progress=60,error=None)
 
-def render(id):
+def artwork_task(id,key,model,quality):
+    try:
+        job=update(id,status='artwork',progress=63,error=None)
+        plan=Plan.model_validate(job['plan']).check_timing(job['duration'])
+        assets=generate_artwork(plan,DATA/id,DATA/'artwork-cache',key,model,quality,
+            progress=lambda n,total,assets:update(id,progress=63+int(n/total*6),artwork_assets=assets))
+        return update(id,status='review',progress=69,artwork_assets=assets)
+    except Exception as e:
+        message=str(e)[:600].replace(key,'[redacted]') if key else str(e)[:600]
+        update(id,status='error',error='Artwork generation failed: '+message)
+
+@app.post('/api/projects/{id}/artwork')
+def start_artwork(id:str):
+    with LOCK:
+        job=load(id)
+        if job['status'] not in ['review','complete','error'] or not job.get('plan'):raise HTTPException(409,'Wait for a valid scene plan.')
+        if not job['plan'].get('artwork'):raise HTTPException(400,'This plan does not request artwork.')
+        if not SETTINGS['key']:raise HTTPException(400,'Connect an OpenAI API key first.')
+        job.update(status='queued',progress=62,error=None)
+        with connection() as c:c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(job),id))
+    POOL.submit(artwork_task,id,SETTINGS['key'],SETTINGS['image_model'],SETTINGS['image_quality']);return job
+
+def render(id,key=None,image_model=None,image_quality=None):
     try:
         job=update(id,status='rendering',progress=70,error=None)
         interpreter=renderer_python()
@@ -177,11 +208,19 @@ def render(id):
         job['style']=art['palette']
         plan.update({k:job[k] for k in ['duration','style','aspect','quality']})
         path=DATA/id
+        if plan.get('artwork'):
+            update(id,status='artwork',progress=66)
+            assets=generate_artwork(Plan.model_validate(plan),path,DATA/'artwork-cache',key or SETTINGS['key'],image_model or SETTINGS['image_model'],image_quality or SETTINGS['image_quality'],progress=lambda n,total,assets:update(id,artwork_assets=assets,progress=66+int(n/total*4)))
+            update(id,status='rendering',progress=71,artwork_assets=assets)
         (path/'plan.json').write_text(json.dumps(plan,ensure_ascii=False,indent=2),encoding='utf-8')
         source=(ROOT/'backend'/'renderer.py').read_text(encoding='utf-8')
         # repr encodes the plan as a Python string; it never becomes executable source.
         source='import json\nPLAN=json.loads('+repr(json.dumps(plan,ensure_ascii=False))+')\n'+source
         (path/'animation.py').write_text(source,encoding='utf-8')
+        with zipfile.ZipFile(path/'source-bundle.zip','w',zipfile.ZIP_DEFLATED) as bundle:
+            for name in ['animation.py','plan.json','artwork-manifest.json']:
+                if (path/name).exists():bundle.write(path/name,name)
+            for asset in plan.get('artwork',[]):bundle.write(path/'artwork'/(asset['id']+'.png'),'artwork/'+asset['id']+'.png')
         env={k:v for k,v in os.environ.items() if k not in ['OPENAI_API_KEY']}
         env['PYTHONIOENCODING']='utf-8'
         with (path/'render.log').open('w',encoding='utf-8') as log:
@@ -190,11 +229,15 @@ def render(id):
         candidates=[p for p in (path/'media'/'videos').rglob('BrollScene.mp4') if 'partial_movie_files' not in str(p)]
         if not candidates:raise ValueError('The renderer did not produce an MP4.')
         shutil.copy2(candidates[0],path/'silent.mp4');update(id,progress=92)
-        mux(path/'silent.mp4',path/'input.mp4',path/'with-audio.mp4')
+        if job.get('has_audio',True):mux(path/'silent.mp4',path/'input.mp4',path/'with-audio.mp4')
         poster(path/'silent.mp4',path/'poster.jpg')
         update(id,status='complete',progress=100,style=art['palette'],art_direction=art)
     except subprocess.TimeoutExpired:update(id,status='error',error='Rendering exceeded 30 minutes. Try preview quality or a shorter video.')
-    except Exception as e:update(id,status='error',error=str(e)[:700])
+    except Exception as e:
+        message=str(e)[:700]
+        for secret in [key,SETTINGS['key']]:
+            if secret:message=message.replace(secret,'[redacted]')
+        update(id,status='error',error=message)
 
 @app.post('/api/projects/{id}/render')
 def start_render(id:str):
@@ -203,7 +246,7 @@ def start_render(id:str):
         if job['status'] not in ['review','complete','error'] or not job.get('plan'):raise HTTPException(409,'A valid scene plan is needed before rendering.')
         job.update(status='queued',progress=65,error=None)
         with connection() as c:c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(job),id))
-    POOL.submit(render,id);return job
+    POOL.submit(render,id,SETTINGS['key'],SETTINGS['image_model'],SETTINGS['image_quality']);return job
 
 @app.post('/api/projects/{id}/retry')
 def retry(id:str):
@@ -213,13 +256,22 @@ def retry(id:str):
     if job['planner']=='openai' and not SETTINGS['key']:raise HTTPException(400,'Add an API key first.')
     update(id,status='queued',error=None);POOL.submit(analyze,id,SETTINGS['key'],SETTINGS['model']);return load(id)
 
-ARTIFACTS={'silent':'silent.mp4','audio':'with-audio.mp4','source':'animation.py','transcript':'transcript.srt','plan':'plan.json','poster':'poster.jpg','log':'render.log','input':'input.mp4'}
+ARTIFACTS={'silent':'silent.mp4','audio':'with-audio.mp4','source':'animation.py','bundle':'source-bundle.zip','artwork':'artwork-manifest.json','transcript':'transcript.srt','plan':'plan.json','poster':'poster.jpg','log':'render.log','input':'input.mp4'}
 @app.get('/api/projects/{id}/files/{kind}')
 def artifact(id:str,kind:str,download:bool=False):
     path=folder(id)/ARTIFACTS.get(kind,'__missing')
     if not path.is_file():raise HTTPException(404,'This file is not ready yet.')
-    media='video/mp4' if path.suffix=='.mp4' else 'image/jpeg' if path.suffix=='.jpg' else 'text/plain'
+    media='video/mp4' if path.suffix=='.mp4' else 'image/jpeg' if path.suffix=='.jpg' else 'application/zip' if path.suffix=='.zip' else 'text/plain'
     return FileResponse(path,media_type=media,filename=path.name if download else None)
+
+@app.get('/api/projects/{id}/artwork/{asset_id}')
+def artwork_file(id:str,asset_id:str):
+    job=load(id)
+    ids={a['id'] for a in (job.get('plan') or {}).get('artwork',[])}
+    if asset_id not in ids:raise HTTPException(404,'Artwork not found.')
+    path=DATA/id/'artwork'/(asset_id+'.png')
+    if not path.exists():raise HTTPException(404,'Artwork is not ready yet.')
+    return FileResponse(path,media_type='image/png')
 
 @app.post('/api/sample')
 def sample():
@@ -227,5 +279,9 @@ def sample():
     path=DATA/'sample'
     if not path.exists():raise HTTPException(404,'The sample is not installed. Run the sample setup script.')
     return load('sample')
+
+@app.post('/api/artwork-sample')
+def artwork_sample():
+    return load('sample-artwork')
 
 app.mount('/',StaticFiles(directory=ROOT/'dist',html=True),name='studio')

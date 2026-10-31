@@ -12,6 +12,16 @@ Run `start.ps1` in PowerShell, then open http://127.0.0.1:8765.
 4. Create the scene plan. Review the transcript and storyboard. Use Edit plan to adjust exact labels, scene types, and action timestamps.
 5. Render. Download the MP4 with original audio, silent MP4, Manim source, transcript, and scene plan.
 
+## AI-generated artwork
+
+New uploads enable custom artwork by default. AI plans up to four reusable assets per project: full illustrated backgrounds and isolated transparent objects. It chooses their appearance from the automatic art direction. Turn off Generate custom AI artwork to keep a vector-only workflow without image API charges.
+
+After scene planning, use Generate artwork to review assets in the gallery before rendering, or render directly to generate the requested artwork as part of the render task. Editing asset prompts in Edit plan changes the cache key. Unchanged prompts, model, quality, and size reuse cached images across local projects. Partial successes are cached too, so retrying does not regenerate completed images unnecessarily.
+
+Settings includes the image model (default `gpt-image-2.5-flare`) and low/medium/high artwork quality. The selected model must be available to your OpenAI account and support transparent PNGs for cutouts. Image generation uses your API key, adds API charges, and can take several minutes. No automatic model substitution occurs. Backgrounds and cutouts share a common art-direction brief; consistency is not guaranteed across separate generations.
+
+The renderer animates generated image layers together with vector particles, clouds, camera moves, and precise diagrams. A moving layer is not a deforming 3D object or generative video. Download Source + artwork ZIP for a runnable Python source bundle containing the images, plan, and asset prompts. API keys are never included. Generated images stay in local `data/`; only the explicitly included demo is bundled with the hosted preview.
+
 An actual rendered example of the stack lesson is included. New projects use the reusable renderer and are not copies of that example's hand-authored animation.
 
 ## Technologies
@@ -30,6 +40,8 @@ This is stylized 2D/2.5D animation with layered scenery and camera movement. It 
 
 - `OPENAI_API_KEY`: optional server environment key instead of Settings.
 - `OPENAI_MODEL`: planning model, defaults to `gpt-4.1-mini`; adjustable in Settings.
+- `OPENAI_IMAGE_MODEL`: image model, defaults to `gpt-image-2.5-flare`.
+- `OPENAI_IMAGE_QUALITY`: `low`, `medium`, or `high`; defaults to `low`.
 - `MANIM_PYTHON`: Python executable with Manim installed. On this machine it automatically discovers `~/manimations/.venv/Scripts/python.exe`.
 - `WHISPER_MODEL`: defaults to `small`. First use downloads the model if it is not cached.
 - `WHISPER_CACHE`: defaults to the existing `.whisper-models` directory beside this project.

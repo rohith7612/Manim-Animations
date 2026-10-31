@@ -3,9 +3,15 @@ from pydantic import BaseModel, Field, model_validator
 
 KINDS = Literal['plates', 'stack', 'queue', 'editor', 'browser', 'calls', 'expression', 'flow', 'illustration']
 
+class ArtworkAsset(BaseModel):
+    id: str = Field(min_length=1,max_length=40,pattern=r'^[a-zA-Z0-9_-]+$')
+    role: Literal['background','cutout']
+    prompt: str = Field(min_length=20,max_length=3500)
+    aspect: Literal['landscape','portrait','square']
+
 class VisualObject(BaseModel):
     id: str = Field(min_length=1,max_length=40,pattern=r'^[a-zA-Z0-9_-]+$')
-    shape: Literal['circle','ellipse','rectangle','polygon','path','sun','cloud','droplet','mountain','water','tree','molecule','gear','star']
+    shape: Literal['circle','ellipse','rectangle','polygon','path','sun','cloud','droplet','mountain','water','tree','molecule','gear','star','image']
     x: float = Field(ge=-16,le=16)
     y: float = Field(ge=-12,le=12)
     width: float = Field(gt=0,le=32)
@@ -14,6 +20,7 @@ class VisualObject(BaseModel):
     opacity: float = Field(ge=0,le=1)
     layer: int = Field(ge=-20,le=30)
     points: list[list[float]] = Field(max_length=30)
+    asset_id: str = Field(default='',max_length=40,pattern=r'^[a-zA-Z0-9_-]*$')
 
 class ObjectMotion(BaseModel):
     target: str = Field(max_length=40)
@@ -63,8 +70,11 @@ class Plan(BaseModel):
     title: str = Field(max_length=100)
     scenes: list[Shot] = Field(min_length=1, max_length=40)
     art_direction: ArtDirection | None = None
+    artwork: list[ArtworkAsset] = Field(default_factory=list,max_length=4)
 
     def check_timing(self, duration):
+        asset_ids=[asset.id for asset in self.artwork]
+        if len(set(asset_ids))!=len(asset_ids):raise ValueError('Artwork IDs must be unique.')
         last = 0
         for scene in self.scenes:
             if not (0 <= scene.start < scene.end <= duration + .1):
@@ -78,6 +88,7 @@ class Plan(BaseModel):
                 ids=[o.id for o in scene.illustration.objects]
                 if len(set(ids))!=len(ids):raise ValueError('Visual object IDs must be unique within a scene.')
                 for obj in scene.illustration.objects:
+                    if obj.shape=='image' and obj.asset_id not in asset_ids:raise ValueError('Image object refers to missing artwork.')
                     if any(len(p)!=2 or any(not -32<=v<=32 for v in p) for p in obj.points):raise ValueError('Object points need bounded x/y coordinates.')
                 for motion in scene.illustration.motions:
                     if motion.target not in ids:raise ValueError('Motion refers to a missing visual object.')
