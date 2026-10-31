@@ -1,0 +1,13 @@
+data/
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.log
+.test-temp*/
+integration-job.txt
+ai-integration-job.txt
+.env
+.env.*
+.openai/*token*
+!.env.example
