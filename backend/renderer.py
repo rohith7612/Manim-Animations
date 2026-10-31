@@ -4,6 +4,8 @@ import os
 import json
 import ast
 import operator
+import time
+from PIL import Image as PILImage
 from pathlib import Path
 
 if 'PLAN' not in globals():
@@ -28,6 +30,20 @@ config.pixel_height=(1920 if portrait else 1080) if quality=='final' else (960 i
 config.frame_rate=30
 
 class BrollScene(MovingCameraScene):
+    def setup(self):
+        super().setup()
+        self._progress_started=time.time()
+        self._progress_last=0
+    def update_mobjects(self,dt):
+        super().update_mobjects(dt)
+        now=time.time()
+        if now-getattr(self,'_progress_last',0)>.75:
+            self._progress_last=now
+            payload={'started_at':getattr(self,'_progress_started',now),'updated_at':now,'rendered_seconds':float(self.time),'wall_elapsed':now-getattr(self,'_progress_started',now)}
+            try:
+                path=Path(__file__).resolve().parent/'render-progress.json'
+                temp=path.with_suffix('.partial');temp.write_text(json.dumps(payload),encoding='utf-8');temp.replace(path)
+            except OSError:pass
     def visual_object(self,spec):
         shape=spec['shape'];c=spec['color'];w=spec['width'];h=spec['height']
         if shape=='image':
@@ -35,7 +51,12 @@ class BrollScene(MovingCameraScene):
             if not asset_id or any(ch not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for ch in asset_id):raise ValueError('Invalid artwork identifier.')
             image_path=Path(__file__).resolve().parent/'artwork'/(asset_id+'.png')
             if not image_path.is_file():raise ValueError('Generate the requested artwork before rendering this scene.')
-            obj=ImageMobject(str(image_path))
+            cameras=[min(s['illustration']['camera_width'],s['illustration']['camera_end_width']) for s in PLAN['scenes'] if s.get('illustration')]
+            density=config.pixel_width/min(cameras or [config.frame_width*.75])
+            with PILImage.open(image_path) as image:
+                image=image.convert('RGBA')
+                image.thumbnail((max(32,int(w*density*1.2)),max(32,int(h*density*1.2))),PILImage.Resampling.LANCZOS)
+                obj=ImageMobject(np.array(image))
             role=next((a['role'] for a in PLAN.get('artwork',[]) if a['id']==asset_id),'cutout')
             factor=max(w/obj.width,h/obj.height) if role=='background' else min(w/obj.width,h/obj.height)
             obj.scale(factor).move_to([spec['x'],spec['y'],0]).set_opacity(spec['opacity']).set_z_index(spec['layer'])
@@ -78,12 +99,19 @@ class BrollScene(MovingCameraScene):
         world=Group(Rectangle(width=80,height=60,fill_color=data['background'],fill_opacity=1,stroke_width=0).set_z_index(-9))
         objects={o['id']:self.visual_object(o) for o in data['objects']}
         originals={key:obj.copy() for key,obj in objects.items()}
+        animated={motion['target'] for motion in data['motions']}
+        specifications={o['id']:o for o in data['objects']}
         world.add(*objects.values())
         paths={i:VMobject().set_points_smoothly([[p[0],p[1],0] for p in motion['path']]) for i,motion in enumerate(data['motions']) if len(motion['path'])>=2}
         clock=ValueTracker(start)
         def update_world(group,dt=0):
             t=clock.get_value()
-            for key,obj in objects.items():obj.become(originals[key])
+            for key in animated:
+                obj=objects[key]
+                if isinstance(obj,ImageMobject):
+                    obj.points=originals[key].points.copy()
+                    obj.set_opacity(specifications[key]['opacity'])
+                else:obj.become(originals[key])
             for i,motion in enumerate(data['motions']):
                 obj=objects[motion['target']];a=motion['start'];b=motion['end']
                 u=np.clip((t-a)/max(.001,b-a),0,1);action=motion['action'];reps=motion['repeats']

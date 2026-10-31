@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import threading
 import zipfile
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from .models import Plan
 from .media import inspect, audio_samples, mux, poster, srt
 from .planner import ai_plan, guided_plan, infer_direction
 from .artwork import generate as generate_artwork, prepare_plan, DEFAULT_IMAGE_MODEL
+from .render_status import with_render_status
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('FRAMECRAFT_DATA',ROOT/'data')).resolve()
@@ -94,7 +96,7 @@ def projects():
     with connection() as c:rows=c.execute('SELECT payload FROM jobs ORDER BY rowid DESC').fetchall()
     return [json.loads(r[0]) for r in rows]
 @app.get('/api/projects/{id}')
-def project(id:str):return load(id)
+def project(id:str):return with_render_status(load(id),DATA)
 
 def renderer_python():
     configured=os.environ.get('MANIM_PYTHON')
@@ -199,7 +201,8 @@ def start_artwork(id:str):
 
 def render(id,key=None,image_model=None,image_quality=None):
     try:
-        job=update(id,status='rendering',progress=70,error=None)
+        job=update(id,status='rendering',progress=70,error=None,render_started_at=time.time())
+        (DATA/id/'render-progress.json').unlink(missing_ok=True)
         interpreter=renderer_python()
         if not interpreter:raise ValueError('Manim was not found. Set MANIM_PYTHON to your Manim Python executable and restart.')
         plan=Plan.model_validate(job['plan']).check_timing(job['duration']).model_dump()

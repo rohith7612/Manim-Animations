@@ -69,6 +69,11 @@ function showProject(j,scroll=false){
  $('#project-panel').hidden=false;$('#project-title').textContent=j.name;$('#job-state').textContent=j.sample?'Example · complete':j.status==='review'?'Ready for review':j.status;
  const running=activeStates.includes(j.status);$('#progress-area').hidden=!running;$('#progress-bar').style.width=(j.progress||0)+'%';
  $('#progress-text').textContent={queued:'Waiting for the local worker…',transcribing:'Listening to the narration and finding word timings…',planning:'Turning your transcript into a visual scene plan…',artwork:'Generating and caching your illustrated backgrounds and objects…',rendering:'Animating your scenes. The worker is rendering the MP4…'}[j.status]||'';
+ if(j.status==='rendering'&&Number.isFinite(j.rendered_seconds)){
+  const eta=Number.isFinite(j.render_eta_seconds)?` · about ${j.render_eta_seconds<60?j.render_eta_seconds+' sec':Math.ceil(j.render_eta_seconds/60)+' min'} remaining`:'';
+  const stale=j.render_update_age>30?` · last update ${j.render_update_age}s ago`:'';
+  $('#progress-text').textContent=`Rendered ${time(j.rendered_seconds)} of ${time(j.render_total_seconds)}${eta}${stale}`;
+ }
  $('#job-error').hidden=!j.error;$('#job-error').textContent=j.error||'';
  let actions='';
  if(j.status==='complete')actions=downloads(j);
