@@ -56,8 +56,12 @@ class BrollScene(MovingCameraScene):
             decor.add(Line(LEFT*3+DOWN*(n*.53+.3),RIGHT*3+DOWN*(n*.53+.3),color=BLUE))
         elif kind=='editor':
             decor.add(self.panel(7,4),Line(LEFT*3.2+UP*1.1,RIGHT*3.2+UP*1.1,color=BLUE,stroke_opacity=.35))
-            for i,item in enumerate(items):
-                objects.append(self.label(item,62).move_to(RIGHT*((i-(n-1)/2)*min(1.05,5/n))))
+            snapshots=n>1 and len(items[-1])>1 and all(b.startswith(a) for a,b in zip(items,items[1:]))
+            for i,item in enumerate(items):objects.append(self.label(item,62))
+            if not snapshots:
+                row=VGroup(*objects).arrange(RIGHT,buff=.2)
+                if row.width>6:row.scale_to_fit_width(6)
+                row.move_to(ORIGIN)
             decor.add(self.label('Ctrl + Z',24,BLUE).move_to(DOWN*2.9))
         elif kind=='browser':
             for i,item in enumerate(items):
@@ -87,6 +91,10 @@ class BrollScene(MovingCameraScene):
             group,objects=self.build(shot)
             home_positions=[obj.get_center().copy() for obj in objects]
             hidden={c['index'] for c in shot['cues'] if c['action']=='add'}
+            snapshots=shot['kind']=='editor' and len(shot['items'])>1 and len(shot['items'][-1])>1 and all(b.startswith(a) for a,b in zip(shot['items'],shot['items'][1:]))
+            if snapshots:
+                visible=[i for i in range(len(objects)) if i not in hidden]
+                for i in visible[:-1]:objects[i].set_opacity(0)
             for i in hidden:objects[i].set_opacity(0)
             dt=min(.3,(shot['end']-shot['start'])/4)
             self.play(*[FadeOut(m,shift=LEFT*.15) for m in active],FadeIn(group,shift=RIGHT*.15),
@@ -99,10 +107,12 @@ class BrollScene(MovingCameraScene):
                 if dt<.04:continue
                 obj=objects[cue['index']];action=cue['action']
                 if action in ['add','restore']:
-                    self.play(obj.animate.move_to(home_positions[cue['index']]).set_opacity(1),run_time=dt)
+                    extra=[other.animate.set_opacity(0) for other in objects if other is not obj] if snapshots else []
+                    self.play(obj.animate.move_to(home_positions[cue['index']]).set_opacity(1),*extra,run_time=dt)
                 elif action=='remove':
                     motion=LEFT*1.6 if shot['kind']=='queue' else UP*1.2+RIGHT*.6
-                    self.play(obj.animate.shift(motion).set_opacity(0),run_time=dt)
+                    extra=[objects[cue['index']-1].animate.set_opacity(1)] if snapshots and cue['index']>0 else []
+                    self.play(obj.animate.shift(motion).set_opacity(0),*extra,run_time=dt)
                 else:
                     center=obj.get_center()*.22
                     self.play(Indicate(obj,color=GREEN,scale_factor=1.06),

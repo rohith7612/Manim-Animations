@@ -7,6 +7,7 @@ __pycache__/
 .test-temp*/
 integration-job.txt
 ai-integration-job.txt
+ai-render-check.jpg
 .env
 .env.*
 .openai/*token*
