@@ -119,8 +119,8 @@ def analyze(id,key,model):
         update(id,status='planning',progress=42,transcript=segments)
         if job['planner']=='openai':
             if not key:raise ValueError('Add an OpenAI API key in Settings, or choose the built-in planner.')
-            plan=ai_plan(segments,job['duration'],key,model,job['direction'])
-        else:plan=guided_plan(segments,job['duration'])
+            plan=ai_plan(segments,job['duration'],key,model,job['direction'],job.get('aspect','portrait'))
+        else:plan=guided_plan(segments,job['duration'],job.get('aspect','portrait'))
         art=plan.art_direction or infer_direction(segments)
         update(id,status='review',progress=60,plan=plan.model_dump(),style=art.palette,art_direction=art.model_dump())
     except Exception as e:

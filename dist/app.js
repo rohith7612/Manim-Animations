@@ -77,7 +77,7 @@ function showProject(j,scroll=false){
  if(j.status==='error'&&j.plan)actions+=`<a class="download-link" href="${fileUrl(j,'log',true)}">↓ Render log</a>`;
  $('#project-actions').innerHTML=actions;
  if(j.plan){
-  $('#storyboard').innerHTML=j.plan.scenes.map((s,i)=>`<button class="story-card" data-scene="${i}"><span class="scene-number">${String(i+1).padStart(2,'0')}</span><span class="story-info"><b>${escapeHtml(s.title||s.kind)}</b><small>${escapeHtml(s.kind)} · ${s.items.length} objects · ${s.cues.length} timed actions</small></span><time>${time(s.start)}–${time(s.end)}</time></button>`).join('');
+  $('#storyboard').innerHTML=j.plan.scenes.map((s,i)=>`<button class="story-card" data-scene="${i}"><span class="scene-number">${String(i+1).padStart(2,'0')}</span><span class="story-info"><b>${escapeHtml(s.title||s.kind)}</b><small>${escapeHtml(s.kind)} · ${s.illustration?.objects?.length||s.items.length} objects · ${s.illustration?.motions?.length||s.cues.length} timed actions</small></span><time>${time(s.start)}–${time(s.end)}</time></button>`).join('');
   if(changed||document.activeElement!==$('#plan-json'))$('#plan-json').value=JSON.stringify(j.plan,null,2);
  }else{$('#storyboard').innerHTML='<p class="muted">Your scene plan will appear here after transcription and planning.</p>';$('#plan-json').value='';}
  $('#transcript').innerHTML=(j.transcript||[]).map(s=>`<div class="transcript-line"><button data-seek="${s.start}">${time(s.start)}</button><p>${escapeHtml(s.text)}</p></div>`).join('')||'<p class="muted">Your timestamped transcript will appear here.</p>';
@@ -108,3 +108,11 @@ $('#load-example').onclick=async()=>{
  }catch(e){toast(e.message);}
 };
 refreshHealth();if(local)library();
+$('#load-nature').onclick=()=>{
+ clearTimeout(poll);current=null;$('#project-panel').hidden=true;
+ $('#player').src='/assets/water-cycle.mp4';$('#player').poster='/assets/water-cycle.jpg';
+ $('#preview-name').textContent='Water cycle · illustrated world';$('#preview-badge').textContent='SILENT DEMO';
+ $('#preview-meta').textContent='00:24 · 1920 × 1080 · Scenic animation';
+ $('#player').play().catch(()=>{});$('#player').scrollIntoView({behavior:'smooth',block:'center'});
+ toast('Illustrated capability demo. Upload your own narrated video for matching timing and audio.');
+};

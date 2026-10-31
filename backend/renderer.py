@@ -28,6 +28,74 @@ config.pixel_height=(1920 if portrait else 1080) if quality=='final' else (960 i
 config.frame_rate=30
 
 class BrollScene(MovingCameraScene):
+    def visual_object(self,spec):
+        shape=spec['shape'];c=spec['color'];w=spec['width'];h=spec['height']
+        if shape=='sun':
+            rays=VGroup(*[Line(np.array([np.cos(a),np.sin(a),0])*.65,np.array([np.cos(a),np.sin(a),0])*.85,color=c,stroke_width=4) for a in np.linspace(0,TAU,12,endpoint=False)])
+            body=Circle(radius=.48,stroke_width=0,fill_color=c,fill_opacity=1)
+            glow=VGroup(*[Circle(radius=.52+i*.045,stroke_width=0,fill_color=c,fill_opacity=.025) for i in range(8,0,-1)])
+            obj=VGroup(glow,rays,body)
+        elif shape=='cloud':
+            obj=VGroup(*[Circle(radius=r,fill_color=c,fill_opacity=1,stroke_width=0).move_to([x,y,0]) for x,y,r in [(-.6,0,.34),(-.24,.2,.43),(.18,.26,.47),(.61,.03,.33)]],RoundedRectangle(width=1.35,height=.4,corner_radius=.18,fill_color=c,fill_opacity=1,stroke_width=0).shift(DOWN*.12))
+        elif shape=='droplet':
+            obj=VMobject(fill_color=c,fill_opacity=1,stroke_width=0).set_points_as_corners([[0,.7,0],[-.3,.1,0],[-.32,-.25,0],[0,-.45,0],[.32,-.25,0],[.3,.1,0],[0,.7,0]])
+        elif shape=='mountain':
+            obj=VGroup(Polygon([-1,-.7,0],[0,.9,0],[1,-.7,0],fill_color=c,fill_opacity=1,stroke_width=0),Polygon([-.28,.45,0],[0,.9,0],[.3,.42,0],[.1,.5,0],[-.05,.35,0],fill_color='#E4F4F4',fill_opacity=.9,stroke_width=0))
+        elif shape=='tree':
+            obj=VGroup(Rectangle(width=.14,height=.75,stroke_width=0,fill_color='#69513B',fill_opacity=1).shift(DOWN*.3),*[Triangle(stroke_width=0,fill_color=c,fill_opacity=1).scale(.35).shift(UP*y) for y in [-.15,.1,.35]])
+        elif shape=='molecule':
+            pts=[LEFT*.6,UP*.5,RIGHT*.6,DOWN*.4]
+            obj=VGroup(*[Line(pts[i],pts[(i+1)%4],color=c,stroke_width=5) for i in range(4)],*[Circle(radius=.2,fill_color=c,fill_opacity=1,stroke_color=WHITE,stroke_width=1).move_to(p) for p in pts])
+        elif shape=='gear':
+            obj=VGroup(*[Rectangle(width=.24,height=.4,stroke_width=0,fill_color=c,fill_opacity=1).move_to(UP*.65).rotate(a,about_point=ORIGIN) for a in np.linspace(0,TAU,12,endpoint=False)],Annulus(inner_radius=.23,outer_radius=.6,fill_color=c,fill_opacity=1,stroke_width=0))
+        elif shape=='star':obj=Star(n=5,fill_color=c,fill_opacity=1,stroke_width=0)
+        elif shape=='water':
+            top=[[x,.05*np.sin(x*7),0] for x in np.linspace(-1,1,32)]
+            obj=Polygon(*top,[1,-1,0],[-1,-1,0],stroke_width=0,fill_color=c,fill_opacity=1)
+        elif shape in ['polygon','path'] and len(spec['points'])>=2:
+            points=[[p[0],p[1],0] for p in spec['points']]
+            obj=Polygon(*points,stroke_width=0,fill_color=c,fill_opacity=1) if shape=='polygon' else VMobject(stroke_color=c,stroke_width=5).set_points_smoothly(points)
+        elif shape=='circle':obj=Circle(fill_color=c,fill_opacity=1,stroke_width=0)
+        elif shape=='ellipse':obj=Ellipse(fill_color=c,fill_opacity=1,stroke_width=0)
+        else:obj=Rectangle(fill_color=c,fill_opacity=1,stroke_width=0)
+        if obj.width>.001:obj.stretch_to_fit_width(w)
+        if obj.height>.001:obj.stretch_to_fit_height(h)
+        obj.move_to([spec['x'],spec['y'],0]).fade(1-spec['opacity']).set_z_index(spec['layer'])
+        return obj
+
+    def play_illustration(self,shot,active):
+        data=shot['illustration'];start=shot['start'];end=shot['end']
+        world=VGroup(Rectangle(width=80,height=60,fill_color=data['background'],fill_opacity=1,stroke_width=0).set_z_index(-9))
+        objects={o['id']:self.visual_object(o) for o in data['objects']}
+        originals={key:obj.copy() for key,obj in objects.items()}
+        world.add(*objects.values())
+        paths={i:VMobject().set_points_smoothly([[p[0],p[1],0] for p in motion['path']]) for i,motion in enumerate(data['motions']) if len(motion['path'])>=2}
+        clock=ValueTracker(start)
+        def update_world(group,dt=0):
+            t=clock.get_value()
+            for key,obj in objects.items():obj.become(originals[key])
+            for i,motion in enumerate(data['motions']):
+                obj=objects[motion['target']];a=motion['start'];b=motion['end']
+                u=np.clip((t-a)/max(.001,b-a),0,1);action=motion['action'];reps=motion['repeats']
+                phase=(u*reps)%1 if u<1 else 1
+                if action=='flow':
+                    obj.move_to(paths[i].point_from_proportion(float(np.clip(phase,0,1))))
+                    alpha=np.sin(PI*phase)**.5 if a<=t<b else 0
+                    obj.fade(1-float(alpha))
+                elif action=='move':obj.move_to(paths[i].point_from_proportion(float(smooth(u))))
+                elif action=='rotate':obj.rotate(motion['amount']*u*reps,about_point=obj.get_center())
+                elif action=='pulse':obj.scale(max(.05,1+motion['amount']*np.sin(TAU*u*reps)))
+                elif action=='reveal':obj.fade(1-float(smooth(u)))
+                elif action=='hide':obj.fade(float(smooth(u)))
+        world.add_updater(update_world);update_world(world)
+        duration=end-self.time
+        fade=min(.45,duration/5)
+        self.play(*[FadeOut(m) for m in active],FadeIn(world),self.camera.frame.animate.set_width(data['camera_width']).move_to([data['camera_x'],data['camera_y'],0]),run_time=fade)
+        clock.set_value(start+fade)
+        self.play(clock.animate.set_value(end),self.camera.frame.animate.set_width(data['camera_end_width']).move_to([data['camera_end_x'],data['camera_end_y'],0]),run_time=max(.04,end-self.time),rate_func=linear)
+        world.clear_updaters()
+        return [world]
+
     def expression_value(self,items):
         operations={ast.Add:operator.add,ast.Sub:operator.sub,ast.Mult:operator.mul,ast.Div:operator.truediv}
         def value(node):
@@ -167,6 +235,9 @@ class BrollScene(MovingCameraScene):
         active=[]
         for shot in PLAN['scenes']:
             self.wait_to(shot['start'])
+            if shot['kind']=='illustration':
+                active=self.play_illustration(shot,active)
+                continue
             group,objects=self.build(shot)
             home_positions=[obj.get_center().copy() for obj in objects]
             home_shapes=[obj.copy() for obj in objects]

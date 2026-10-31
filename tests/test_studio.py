@@ -108,3 +108,29 @@ def test_upload_has_no_user_style_field(client):
     schema=client.get('/openapi.json').json()
     ref=schema['paths']['/api/projects']['post']['requestBody']['content']['multipart/form-data']['schema']['$ref'].split('/')[-1]
     assert 'style' not in schema['components']['schemas'][ref]['properties']
+
+def test_water_cycle_produces_a_world_with_physical_motion_not_text_cards():
+    p=guided_plan([{'start':0,'end':24,'text':'The water cycle: evaporation, condensation, precipitation, and runoff.'}],24,'landscape')
+    scene=p.scenes[0]
+    assert scene.kind=='illustration'
+    kinds={o.shape for o in scene.illustration.objects}
+    assert {'sun','water','cloud','mountain','droplet'}.issubset(kinds)
+    for stage in ['vapor','rain','runoff']:
+        assert any(m.target.startswith(stage) and m.action=='flow' for m in scene.illustration.motions)
+
+def test_illustration_rejects_missing_objects_and_unsafe_motion_coordinates():
+    from backend.nature import water_cycle
+    p=water_cycle([],12,'landscape')
+    p['scenes'][0]['illustration']['motions'][0]['target']='missing'
+    with pytest.raises(ValueError):Plan.model_validate(p).check_timing(12)
+    p=water_cycle([],12,'landscape')
+    p['scenes'][0]['illustration']['motions'][5]['path']=[[0,0],[1e10,0]]
+    with pytest.raises(ValueError):Plan.model_validate(p).check_timing(12)
+
+def test_freeform_objects_support_other_subjects():
+    from backend.nature import water_cycle
+    p=water_cycle([],12,'landscape')
+    illustration=p['scenes'][0]['illustration']
+    illustration['objects']=[dict(id='planet',shape='circle',x=0,y=0,width=3,height=3,color='#4088DD',opacity=1,layer=0,points=[]),dict(id='moon',shape='circle',x=3,y=0,width=.5,height=.5,color='#CCCCCC',opacity=1,layer=1,points=[])]
+    illustration['motions']=[dict(target='moon',action='move',start=0,end=12,path=[[3,0],[0,2],[-3,0],[0,-2],[3,0]],repeats=1,amount=0)]
+    assert Plan.model_validate(p).check_timing(12).scenes[0].illustration.objects[0].id=='planet'

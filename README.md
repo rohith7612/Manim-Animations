@@ -20,7 +20,11 @@ Python/FastAPI API; SQLite project records; local disk uploads and exports; sing
 
 OpenAI receives the timestamped transcript and creative direction, not the uploaded video. Transcription runs locally. Mood is inferred from the narration's language, rather than acoustic emotion analysis. The model returns validated data, never executable Python. Its art-direction decision is shown with the storyboard. The built-in planner uses a clearly labelled keyword-based fallback when AI planning is disabled.
 
-The trusted renderer supports dimensional plates and stacks, keyboards and editor undo, detailed browser windows, function stacks, expression tokens, queue characters, and illustrated concept diagrams. Shots use staged entrances, ambient backgrounds, camera drift, curved removal paths, and match/slide/dissolve transitions. It does not yet synthesize arbitrary custom illustrations or match every visual in the reference video.
+The renderer now also accepts open visual compositions: positioned shapes, custom polygons and paths, layered scenery, particles, repeatable object motion, and camera tracks. AI can design an actual landscape, mechanism, molecular model, or other scene rather than selecting a text-card template. Illustration shots contain no on-screen text. These scenes use bounded, validated geometry and motion data; arbitrary model-written Python is never executed.
+
+The built-in planner includes a water-cycle reference scene with sunlight, evaporation particles, cloud formation, rain, and runoff. AI planning can compose its own worlds using the illustration schema for science, nature, mechanisms, and other subjects. The included 24-second water-cycle video is a silent capability demo, not a render of a user-provided water-cycle narration.
+
+This is stylized 2D/2.5D animation with layered scenery and camera movement. It is not a photorealistic 3D engine, a fluid simulation, or an unrestricted text-to-video generator. Blender rendering and imported/generated art assets would be separate extensions. Existing computer-science scene types remain available for appropriate topics.
 
 ## Configuration
 

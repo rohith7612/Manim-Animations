@@ -1,7 +1,39 @@
 from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
-KINDS = Literal['plates', 'stack', 'queue', 'editor', 'browser', 'calls', 'expression', 'flow']
+KINDS = Literal['plates', 'stack', 'queue', 'editor', 'browser', 'calls', 'expression', 'flow', 'illustration']
+
+class VisualObject(BaseModel):
+    id: str = Field(min_length=1,max_length=40,pattern=r'^[a-zA-Z0-9_-]+$')
+    shape: Literal['circle','ellipse','rectangle','polygon','path','sun','cloud','droplet','mountain','water','tree','molecule','gear','star']
+    x: float = Field(ge=-16,le=16)
+    y: float = Field(ge=-12,le=12)
+    width: float = Field(gt=0,le=32)
+    height: float = Field(gt=0,le=24)
+    color: str = Field(pattern=r'^#[0-9A-Fa-f]{6}$')
+    opacity: float = Field(ge=0,le=1)
+    layer: int = Field(ge=-20,le=30)
+    points: list[list[float]] = Field(max_length=30)
+
+class ObjectMotion(BaseModel):
+    target: str = Field(max_length=40)
+    action: Literal['move','flow','rotate','pulse','reveal','hide']
+    start: float
+    end: float
+    path: list[list[float]] = Field(max_length=30)
+    repeats: int = Field(ge=1,le=30)
+    amount: float = Field(ge=-20,le=20)
+
+class Illustration(BaseModel):
+    background: str = Field(pattern=r'^#[0-9A-Fa-f]{6}$')
+    objects: list[VisualObject] = Field(min_length=1,max_length=70)
+    motions: list[ObjectMotion] = Field(max_length=120)
+    camera_x: float = Field(ge=-12,le=12)
+    camera_y: float = Field(ge=-8,le=8)
+    camera_width: float = Field(ge=4,le=20)
+    camera_end_x: float = Field(ge=-12,le=12)
+    camera_end_y: float = Field(ge=-8,le=8)
+    camera_end_width: float = Field(ge=4,le=20)
 
 class ArtDirection(BaseModel):
     palette: Literal['midnight','paper','violet','sunrise','ocean','ember']
@@ -25,6 +57,7 @@ class Shot(BaseModel):
     composition: Literal['hero','cascade','orbit','split'] = 'hero'
     camera: Literal['wide','close','tracking'] = 'tracking'
     transition: Literal['match','slide','dissolve'] = 'match'
+    illustration: Illustration | None = None
 
 class Plan(BaseModel):
     title: str = Field(max_length=100)
@@ -40,6 +73,17 @@ class Plan(BaseModel):
                 raise ValueError('Scenes must be ordered without overlaps.')
             if scene.end-scene.start < .65:
                 raise ValueError('Each scene needs at least 0.65 seconds.')
+            if scene.kind=='illustration':
+                if scene.illustration is None:raise ValueError('Illustrated scenes need a visual composition, not just text.')
+                ids=[o.id for o in scene.illustration.objects]
+                if len(set(ids))!=len(ids):raise ValueError('Visual object IDs must be unique within a scene.')
+                for obj in scene.illustration.objects:
+                    if any(len(p)!=2 or any(not -32<=v<=32 for v in p) for p in obj.points):raise ValueError('Object points need bounded x/y coordinates.')
+                for motion in scene.illustration.motions:
+                    if motion.target not in ids:raise ValueError('Motion refers to a missing visual object.')
+                    if not scene.start<=motion.start<motion.end<=scene.end+.001:raise ValueError('Object motion must stay inside its scene.')
+                    if motion.action in ['move','flow'] and len(motion.path)<2:raise ValueError('Moving objects need a path.')
+                    if any(len(p)!=2 or any(not -32<=v<=32 for v in p) for p in motion.path):raise ValueError('Motion paths need bounded x/y coordinates.')
             for cue in scene.cues:
                 if not scene.start <= cue.time < scene.end:
                     raise ValueError('Action cues must fall inside their scene.')
