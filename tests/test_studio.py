@@ -3,7 +3,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from backend.models import Plan
-from backend.planner import guided_plan, normalize_plan
+from backend.planner import guided_plan, normalize_plan, infer_direction
 from backend import app as studio
 
 @pytest.fixture
@@ -82,3 +82,29 @@ def test_normalization_preserves_start_cues_and_clamps_final_duration():
     assert result.scenes[1].start==4
     assert result.scenes[1].end==7.8
     assert result.scenes[1].cues[0].time==5
+
+def test_art_direction_follows_narration_and_survives_validation():
+    calm=infer_direction([{'text':'Breathe, relax, and find peace.'}])
+    urgent=infer_direction([{'text':'An urgent warning about danger.'}])
+    assert calm.palette=='ocean' and calm.motion=='calm'
+    assert urgent.palette=='ember' and urgent.motion=='bold'
+    p=valid();p['art_direction']=calm.model_dump()
+    assert normalize_plan(Plan.model_validate(p),5).art_direction.palette=='ocean'
+
+def test_legacy_plans_remain_renderable():
+    p=Plan.model_validate(valid())
+    assert p.art_direction is None
+    assert p.scenes[0].camera=='tracking'
+
+def test_editor_hook_uses_transcript_action_times():
+    p=valid();p['scenes'][0]['kind']='editor'
+    words=[{'start':.58,'word':'typed'},{'start':1.64,'word':'deleted'},{'start':4.16,'word':'Z.'}]
+    result=normalize_plan(Plan.model_validate(p),5,[{'words':words}])
+    cues=result.scenes[0].cues
+    assert [c.action for c in cues]==['add','add','add','remove','restore']
+    assert cues[-2].time==1.64 and cues[-1].time==4.16
+
+def test_upload_has_no_user_style_field(client):
+    schema=client.get('/openapi.json').json()
+    ref=schema['paths']['/api/projects']['post']['requestBody']['content']['multipart/form-data']['schema']['$ref'].split('/')[-1]
+    assert 'style' not in schema['components']['schemas'][ref]['properties']

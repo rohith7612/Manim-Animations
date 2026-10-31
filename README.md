@@ -8,7 +8,7 @@ Run `start.ps1` in PowerShell, then open http://127.0.0.1:8765.
 
 1. Open Settings and enter your OpenAI API key. It stays in server memory. Alternatively select the built-in planner to work without an API key.
 2. Upload a narrated video (200 MB maximum, 3 minutes maximum).
-3. Choose a style, portrait or landscape, and preview or full-HD output.
+3. Choose portrait or landscape, and preview or full-HD output. AI automatically selects the palette, mood, motion character, background, composition, and camera treatment from the narration's tone and subject. There is no visual-style picker.
 4. Create the scene plan. Review the transcript and storyboard. Use Edit plan to adjust exact labels, scene types, and action timestamps.
 5. Render. Download the MP4 with original audio, silent MP4, Manim source, transcript, and scene plan.
 
@@ -18,7 +18,9 @@ An actual rendered example of the stack lesson is included. New projects use the
 
 Python/FastAPI API; SQLite project records; local disk uploads and exports; single-worker processing queue; Faster-Whisper Small (CPU/int8) word timestamps; NumPy audio processing; OpenAI Responses API structured scene planning; Manim Community rendering; PyAV decoding/audio muxing; Pillow posters; responsive HTML/CSS/JavaScript frontend.
 
-OpenAI receives the timestamped transcript and creative direction, not the uploaded video. Transcription runs locally. The model returns validated data, never executable Python. The trusted renderer supports plates, stacks, queues, editor undo, browser history, function stacks, expression tokens, and generic process diagrams. It does not yet synthesize arbitrary custom illustrations or match every visual in the reference video.
+OpenAI receives the timestamped transcript and creative direction, not the uploaded video. Transcription runs locally. Mood is inferred from the narration's language, rather than acoustic emotion analysis. The model returns validated data, never executable Python. Its art-direction decision is shown with the storyboard. The built-in planner uses a clearly labelled keyword-based fallback when AI planning is disabled.
+
+The trusted renderer supports dimensional plates and stacks, keyboards and editor undo, detailed browser windows, function stacks, expression tokens, queue characters, and illustrated concept diagrams. Shots use staged entrances, ambient backgrounds, camera drift, curved removal paths, and match/slide/dissolve transitions. It does not yet synthesize arbitrary custom illustrations or match every visual in the reference video.
 
 ## Configuration
 

@@ -16,7 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, SecretStr
 from .models import Plan
 from .media import inspect, audio_samples, mux, poster, srt
-from .planner import ai_plan, guided_plan
+from .planner import ai_plan, guided_plan, infer_direction
 
 ROOT=Path(__file__).resolve().parents[1]
 DATA=Path(os.environ.get('FRAMECRAFT_DATA',ROOT/'data')).resolve()
@@ -121,7 +121,8 @@ def analyze(id,key,model):
             if not key:raise ValueError('Add an OpenAI API key in Settings, or choose the built-in planner.')
             plan=ai_plan(segments,job['duration'],key,model,job['direction'])
         else:plan=guided_plan(segments,job['duration'])
-        update(id,status='review',progress=60,plan=plan.model_dump())
+        art=plan.art_direction or infer_direction(segments)
+        update(id,status='review',progress=60,plan=plan.model_dump(),style=art.palette,art_direction=art.model_dump())
     except Exception as e:
         # No request headers or secrets in user-facing error details.
         from openai import AuthenticationError, RateLimitError, APIConnectionError
@@ -132,8 +133,8 @@ def analyze(id,key,model):
         update(id,status='error',error=message)
 
 @app.post('/api/projects')
-async def create(file:UploadFile=File(...),style:str=Form('midnight'),aspect:str=Form('portrait'),quality:str=Form('preview'),planner:str=Form('openai'),direction:str=Form('')):
-    if style not in ['midnight','paper','violet'] or aspect not in ['portrait','landscape'] or quality not in ['preview','final'] or planner not in ['openai','guided']:
+async def create(file:UploadFile=File(...),aspect:str=Form('portrait'),quality:str=Form('preview'),planner:str=Form('openai'),direction:str=Form('')):
+    if aspect not in ['portrait','landscape'] or quality not in ['preview','final'] or planner not in ['openai','guided']:
         raise HTTPException(422,'Choose valid project settings.')
     if len(direction)>2000:raise HTTPException(422,'Keep the creative direction under 2,000 characters.')
     if planner=='openai' and not SETTINGS['key']:raise HTTPException(400,'Add your API key in Settings first, or select the built-in planner.')
@@ -147,7 +148,7 @@ async def create(file:UploadFile=File(...),style:str=Form('midnight'),aspect:str
                 f.write(chunk)
         meta=inspect(path/'input.mp4')
         if not meta['has_audio']:raise ValueError('Upload a video with narration.')
-        job={'id':id,'name':Path(file.filename or 'Untitled video').stem[:100],**meta,'style':style,'aspect':aspect,'quality':quality,'planner':planner,'direction':direction,'status':'queued','progress':2,'transcript':None,'plan':None,'error':None,'sample':False}
+        job={'id':id,'name':Path(file.filename or 'Untitled video').stem[:100],**meta,'style':'auto','art_direction':None,'aspect':aspect,'quality':quality,'planner':planner,'direction':direction,'status':'queued','progress':2,'transcript':None,'plan':None,'error':None,'sample':False}
         save(job);POOL.submit(analyze,id,SETTINGS['key'],SETTINGS['model']);return job
     except Exception as e:
         shutil.rmtree(path,ignore_errors=True)
@@ -162,7 +163,8 @@ def edit_plan(id:str,body:PlanBody):
     if job['status'] not in ['review','complete','error']:raise HTTPException(409,'Wait for the current task to finish.')
     try:body.plan.check_timing(job['duration'])
     except ValueError as e:raise HTTPException(422,str(e))
-    return update(id,plan=body.plan.model_dump(),status='review',progress=60,error=None)
+    art=body.plan.art_direction or infer_direction(job.get('transcript') or [])
+    return update(id,plan=body.plan.model_dump(),style=art.palette,art_direction=art.model_dump(),status='review',progress=60,error=None)
 
 def render(id):
     try:
@@ -170,6 +172,9 @@ def render(id):
         interpreter=renderer_python()
         if not interpreter:raise ValueError('Manim was not found. Set MANIM_PYTHON to your Manim Python executable and restart.')
         plan=Plan.model_validate(job['plan']).check_timing(job['duration']).model_dump()
+        art=plan.get('art_direction') or infer_direction(job.get('transcript') or []).model_dump()
+        plan['art_direction']=art
+        job['style']=art['palette']
         plan.update({k:job[k] for k in ['duration','style','aspect','quality']})
         path=DATA/id
         (path/'plan.json').write_text(json.dumps(plan,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -187,7 +192,7 @@ def render(id):
         shutil.copy2(candidates[0],path/'silent.mp4');update(id,progress=92)
         mux(path/'silent.mp4',path/'input.mp4',path/'with-audio.mp4')
         poster(path/'silent.mp4',path/'poster.jpg')
-        update(id,status='complete',progress=100)
+        update(id,status='complete',progress=100,style=art['palette'],art_direction=art)
     except subprocess.TimeoutExpired:update(id,status='error',error='Rendering exceeded 30 minutes. Try preview quality or a shorter video.')
     except Exception as e:update(id,status='error',error=str(e)[:700])
 
@@ -218,6 +223,7 @@ def artifact(id:str,kind:str,download:bool=False):
 
 @app.post('/api/sample')
 def sample():
+    if (DATA/'sample-auto').exists():return load('sample-auto')
     path=DATA/'sample'
     if not path.exists():raise HTTPException(404,'The sample is not installed. Run the sample setup script.')
     return load('sample')

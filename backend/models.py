@@ -3,6 +3,13 @@ from pydantic import BaseModel, Field, model_validator
 
 KINDS = Literal['plates', 'stack', 'queue', 'editor', 'browser', 'calls', 'expression', 'flow']
 
+class ArtDirection(BaseModel):
+    palette: Literal['midnight','paper','violet','sunrise','ocean','ember']
+    mood: str = Field(max_length=80)
+    rationale: str = Field(max_length=350)
+    motion: Literal['precise','playful','calm','bold']
+    backdrop: Literal['grid','orbits','minimal']
+
 class Cue(BaseModel):
     time: float
     action: Literal['add', 'remove', 'focus', 'restore', 'advance']
@@ -15,10 +22,14 @@ class Shot(BaseModel):
     title: str = Field(max_length=70)
     items: list[str] = Field(min_length=1, max_length=8)
     cues: list[Cue] = Field(max_length=20)
+    composition: Literal['hero','cascade','orbit','split'] = 'hero'
+    camera: Literal['wide','close','tracking'] = 'tracking'
+    transition: Literal['match','slide','dissolve'] = 'match'
 
 class Plan(BaseModel):
     title: str = Field(max_length=100)
     scenes: list[Shot] = Field(min_length=1, max_length=40)
+    art_direction: ArtDirection | None = None
 
     def check_timing(self, duration):
         last = 0
@@ -39,3 +50,6 @@ class Plan(BaseModel):
                 raise ValueError('Leave at least 0.25 seconds between actions.')
             last = scene.end
         return self
+
+class DirectedPlan(Plan):
+    art_direction: ArtDirection

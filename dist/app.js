@@ -1,7 +1,7 @@
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
 const local=['127.0.0.1','localhost','[::1]'].includes(location.hostname);
-let file=null,style='midnight',current=null,poll=null,health=null,busy=false;
+let file=null,current=null,poll=null,health=null,busy=false;
 const activeStates=['queued','transcribing','planning','rendering'];
 const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time=t=>`${Math.floor(t/60).toString().padStart(2,'0')}:${Math.floor(t%60).toString().padStart(2,'0')}`;
@@ -39,7 +39,6 @@ $('#file').onchange=e=>selectFile(e.target.files[0]);
 $('#dropzone').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#file').click();}};
 ['dragenter','dragover'].forEach(name=>$('#dropzone').addEventListener(name,e=>{e.preventDefault();$('#dropzone').classList.add('dragging');}));
 ['dragleave','drop'].forEach(name=>$('#dropzone').addEventListener(name,e=>{e.preventDefault();$('#dropzone').classList.remove('dragging');if(name==='drop')selectFile(e.dataTransfer.files[0]);}));
-$$('[data-style]').forEach(button=>button.onclick=()=>{style=button.dataset.style;$$('[data-style]').forEach(b=>{b.classList.toggle('selected',b===button);b.setAttribute('aria-pressed',String(b===button));});});
 async function view(name){
  $('#studio-view').hidden=name!=='studio';$('#projects-view').hidden=name!=='projects';$('#view-name').textContent=name==='studio'?'Create B-roll':'Projects';$$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===name));if(name==='projects')await library();
 }
@@ -56,7 +55,7 @@ $('#generate').onclick=async()=>{
  if(!file){$('#file').click();return;}
  if(busy)return;
  if($('#planner').value==='openai'&&!health?.api_key_configured){settings();toast('Connect your API key, or select the built-in planner.');return;}
- const form=new FormData();form.append('file',file);form.append('style',style);form.append('aspect',$('#aspect').value);form.append('quality',$('#quality').value);form.append('planner',$('#planner').value);form.append('direction',$('#direction').value);
+ const form=new FormData();form.append('file',file);form.append('aspect',$('#aspect').value);form.append('quality',$('#quality').value);form.append('planner',$('#planner').value);form.append('direction',$('#direction').value);
  busy=true;$('#generate').disabled=true;$('#generate').children[1].textContent='Uploading your video…';
  try{const j=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/api/projects');xhr.upload.onprogress=e=>{if(e.lengthComputable)$('#generate').children[1].textContent=`Uploading · ${Math.round(e.loaded/e.total*100)}%`;};xhr.onload=()=>{try{const data=JSON.parse(xhr.responseText);if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(new Error(typeof data.detail==='string'?data.detail:'Upload could not be accepted.'));}catch{reject(new Error('The service returned an unexpected response.'));}};xhr.onerror=()=>reject(new Error('Upload interrupted. Check your local service.'));xhr.send(form);});showProject(j,true);library();}
  catch(e){toast(e.message);}finally{busy=false;$('#generate').disabled=false;$('#generate').children[1].textContent='Create my scene plan';}
@@ -65,6 +64,8 @@ const fileUrl=(j,kind,download=false)=>`/api/projects/${encodeURIComponent(j.id)
 function downloads(j){return [['audio','MP4 + narration'],['silent','Silent MP4'],['source','Manim source'],['transcript','Transcript'],['plan','Scene plan']].map(([kind,label])=>`<a class="download-link" href="${fileUrl(j,kind,true)}">↓ ${label}</a>`).join('');}
 function showProject(j,scroll=false){
  clearTimeout(poll);const changed=current?.id!==j.id;current=j;
+ const art=j.art_direction||j.plan?.art_direction;
+ $('#art-decision').textContent=art?`${art.mood} · ${art.palette} · ${art.motion} motion. ${art.rationale}`:'Your visual direction appears with the storyboard.';
  $('#project-panel').hidden=false;$('#project-title').textContent=j.name;$('#job-state').textContent=j.sample?'Example · complete':j.status==='review'?'Ready for review':j.status;
  const running=activeStates.includes(j.status);$('#progress-area').hidden=!running;$('#progress-bar').style.width=(j.progress||0)+'%';
  $('#progress-text').textContent={queued:'Waiting for the local worker…',transcribing:'Listening to the narration and finding word timings…',planning:'Turning your transcript into a visual scene plan…',rendering:'Animating your scenes. The worker is rendering the MP4…'}[j.status]||'';

@@ -1,217 +1,229 @@
+import json
+PLAN=json.loads('{"title": "Undo and Queue: Stacks and Queues Explained", "scenes": [{"start": 0.0, "end": 4.76, "kind": "editor", "title": "Typing and Undo", "items": ["A", "B", "C"], "cues": [{"time": 0.58, "action": "add", "index": 0}, {"time": 0.84, "action": "add", "index": 1}, {"time": 1.1, "action": "add", "index": 2}, {"time": 1.64, "action": "remove", "index": 2}, {"time": 4.16, "action": "restore", "index": 2}], "composition": "hero", "camera": "close", "transition": "match"}, {"start": 4.76, "end": 8.26, "kind": "stack", "title": "Basic Stack Concept", "items": ["typed", "deleted", "undo"], "cues": [{"time": 6.5, "action": "add", "index": 0}, {"time": 7.5, "action": "advance", "index": 2}], "composition": "cascade", "camera": "tracking", "transition": "slide"}, {"start": 8.26, "end": 11.08, "kind": "stack", "title": "LIFO Principle", "items": ["first in", "second", "last in"], "cues": [{"time": 9.5, "action": "focus", "index": 2}], "composition": "cascade", "camera": "wide", "transition": "dissolve"}, {"start": 11.08, "end": 16.0, "kind": "plates", "title": "Stack of Plates Analogy", "items": ["plate1", "plate2", "plate3"], "cues": [{"time": 13.5, "action": "add", "index": 0}, {"time": 14.5, "action": "focus", "index": 0}, {"time": 15.5, "action": "remove", "index": 0}], "composition": "hero", "camera": "close", "transition": "match"}, {"start": 16.0, "end": 18.98, "kind": "stack", "title": "Typing Actions Added to Stack", "items": ["action1", "action2"], "cues": [{"time": 16.8, "action": "add", "index": 0}, {"time": 18.0, "action": "add", "index": 1}], "composition": "cascade", "camera": "tracking", "transition": "slide"}, {"start": 18.98, "end": 23.76, "kind": "stack", "title": "Undo Removes Most Recent", "items": ["action1", "action2"], "cues": [{"time": 19.5, "action": "remove", "index": 1}, {"time": 22.2, "action": "remove", "index": 0}], "composition": "cascade", "camera": "tracking", "transition": "match"}, {"start": 23.76, "end": 29.36, "kind": "flow", "title": "Stack Useful for Undo & More", "items": ["undo", "browser nav", "func calls", "expression eval"], "cues": [{"time": 25.5, "action": "advance", "index": 0}, {"time": 27.0, "action": "advance", "index": 1}, {"time": 28.6, "action": "advance", "index": 2}], "composition": "orbit", "camera": "wide", "transition": "dissolve"}, {"start": 29.36, "end": 36.32, "kind": "stack", "title": "Visualize Stack of Plates", "items": ["plate1", "plate2", "plate3"], "cues": [{"time": 33.0, "action": "focus", "index": 2}], "composition": "hero", "camera": "close", "transition": "match"}, {"start": 36.32, "end": 42.28, "kind": "flow", "title": "Question: Removing Oldest Instead?", "items": ["remove newest", "remove oldest?"], "cues": [{"time": 38.5, "action": "focus", "index": 1}], "composition": "split", "camera": "wide", "transition": "slide"}, {"start": 42.28, "end": 49.783583, "kind": "queue", "title": "Queue: Oldest First Out", "items": ["item1", "item2", "item3"], "cues": [{"time": 45.8, "action": "focus", "index": 0}, {"time": 48.0, "action": "advance", "index": 1}], "composition": "cascade", "camera": "tracking", "transition": "dissolve"}], "art_direction": {"palette": "paper", "mood": "educational, clear, calm", "rationale": "The narration explains fundamental computer science concepts with analogies (typing, plates) in a gentle, clear teaching style. Paper palette is soft and editorial, aiding comprehension. Calm motion and minimal grid backdrop support focus and clarity without distraction.", "motion": "calm", "backdrop": "grid"}, "duration": 49.783583, "style": "paper", "aspect": "portrait", "quality": "preview"}')
+"""Trusted renderer. PLAN is inserted as data by the server; AI code is never executed."""
 from manim import *
-import numpy as np
+import os
+import json
+import ast
+import operator
+from pathlib import Path
 
-config.pixel_width=1080
-config.pixel_height=1920
-config.frame_width=9
-config.frame_height=16
+if 'PLAN' not in globals():
+    PLAN=json.loads(Path(os.environ['FRAMECRAFT_PLAN']).read_text(encoding='utf-8'))
+ART=PLAN.get('art_direction') or {}
+STYLE=ART.get('palette',PLAN.get('style','midnight'))
+PAL={'midnight':('#0B1120','#162840','#5CC7FF','#63E4B7'),
+     'paper':('#F2EFE8','#FFFFFF','#3272CB','#1A9B7A'),
+     'violet':('#151126','#282044','#AD93FF','#FFBF88'),
+     'sunrise':('#FFF2DA','#FFF9EE','#D76F35','#369A86'),
+     'ocean':('#071F2B','#103447','#65D8E8','#B7EECC'),
+     'ember':('#251019','#441F2B','#FF8E72','#FFD17C')}
+BG,PANEL,BLUE,GREEN=PAL.get(STYLE,PAL['midnight'])
+INK='#20324A' if STYLE in ['paper','sunrise'] else '#EEF5FF'
+config.background_color=BG
+portrait=PLAN.get('aspect','portrait')=='portrait'
+config.frame_width=9 if portrait else 16
+config.frame_height=16 if portrait else 9
+quality=PLAN.get('quality','preview')
+config.pixel_width=(1080 if portrait else 1920) if quality=='final' else (540 if portrait else 960)
+config.pixel_height=(1920 if portrait else 1080) if quality=='final' else (960 if portrait else 540)
 config.frame_rate=30
-config.background_color='#0A1020'
-BG='#0A1020'; PANEL='#14243B'; INK='#EDF5FF'; DIM='#7992AF'
-BLUE='#52B8FF'; GREEN='#46E0B0'; GOLD='#FFBD69'; RED='#FF748C'
 
-class PolishedStack(MovingCameraScene):
-    def text(self,s,size=30,color=INK):
-        m=Text(s,font='Segoe UI',font_size=size,color=color)
-        if m.width>7.5:m.scale_to_fit_width(7.5)
+class BrollScene(MovingCameraScene):
+    def expression_value(self,items):
+        operations={ast.Add:operator.add,ast.Sub:operator.sub,ast.Mult:operator.mul,ast.Div:operator.truediv}
+        def value(node):
+            if isinstance(node,ast.Constant) and type(node.value) in [int,float] and abs(node.value)<1e6:return node.value
+            if isinstance(node,ast.BinOp) and type(node.op) in operations:
+                result=operations[type(node.op)](value(node.left),value(node.right))
+                if abs(result)<1e9:return result
+            raise ValueError('Unsupported expression')
+        try:
+            result=value(ast.parse(''.join(items),mode='eval').body)
+            return f'{result:g}'
+        except (ValueError,SyntaxError,ZeroDivisionError,TypeError,OverflowError):return None
+    def background(self):
+        self.ambient=VGroup()
+        for center,color in [(LEFT*3+UP*3,BLUE),(RIGHT*3+DOWN*4,GREEN)]:
+            for i in range(8,0,-1):
+                self.ambient.add(Circle(radius=.6+i*.48,stroke_width=0,fill_color=color,fill_opacity=.006).move_to(center))
+        motif=ART.get('backdrop','grid')
+        if motif=='grid':
+            for x in range(-10,11):self.ambient.add(Line(RIGHT*x+DOWN*12,RIGHT*x+UP*12,color=BLUE,stroke_width=.5,stroke_opacity=.055))
+            for y in range(-12,13):self.ambient.add(Line(LEFT*12+UP*y,RIGHT*12+UP*y,color=BLUE,stroke_width=.5,stroke_opacity=.055))
+        elif motif=='orbits':
+            rings=VGroup(*[Ellipse(width=8+i*2,height=3+i,stroke_color=BLUE,stroke_width=.7,stroke_opacity=.1).rotate(.4).shift(DOWN*2) for i in range(3)])
+            rings.add_updater(lambda m,dt:m.rotate(dt*.018))
+            self.ambient.add(rings)
+        self.ambient.set_z_index(-10)
+        self.add(self.ambient)
+
+    def icon(self,label,color=BLUE):
+        word=label.lower()
+        if any(w in word for w in ['undo','back','return']):
+            return VGroup(Arc(radius=.45,start_angle=-.5,angle=4.4,color=color,stroke_width=5),Triangle(color=color,fill_color=color,fill_opacity=1).scale(.11).rotate(PI/3).shift(LEFT*.45+DOWN*.3))
+        if any(w in word for w in ['browser','search','web','page']):
+            globe=VGroup(Circle(radius=.5,color=color),Ellipse(width=.45,height=1,color=color),Line(LEFT*.5,RIGHT*.5,color=color))
+            return globe
+        if any(w in word for w in ['call','function','code','type']):
+            return VGroup(self.label('{',48,color).shift(LEFT*.42),self.label('}',48,color).shift(RIGHT*.42),Dot(color=GREEN,radius=.07))
+        if any(w in word for w in ['result','out','finish']):
+            return VGroup(Circle(radius=.5,color=color),VMobject(color=color,stroke_width=4).set_points_as_corners([LEFT*.28,DOWN*.2,RIGHT*.3+UP*.25]))
+        if any(w in word for w in ['idea','think','concept']):
+            return VGroup(Circle(radius=.38,color=color).shift(UP*.1),Line(LEFT*.2+DOWN*.35,RIGHT*.2+DOWN*.35,color=color,stroke_width=4),Line(LEFT*.13+DOWN*.47,RIGHT*.13+DOWN*.47,color=color,stroke_width=4))
+        return VGroup(*[Circle(radius=.12,fill_color=color,fill_opacity=1,stroke_width=0).move_to(p) for p in [LEFT*.4,UP*.4,RIGHT*.4,DOWN*.4]],Line(LEFT*.4,UP*.4,color=color),Line(UP*.4,RIGHT*.4,color=color),Line(RIGHT*.4,DOWN*.4,color=color))
+    def label(self,s,size=34,color=None):
+        m=Text(str(s)[:80],font='DejaVu Sans',font_size=size,color=color or INK)
+        if m.width>5.8:m.scale_to_fit_width(5.8)
         return m
-    def until(self,t):
-        # Camera moves use existing narration pauses, preserving absolute cues.
-        shots={1.64:(7.7,UP*.5),3.08:(8.4,ORIGIN),12.88:(7.4,DOWN*.5),
-               14.68:(7.0,DOWN*.4),19.56:(8.1,DOWN*.6),22.16:(7.9,DOWN*.5),
-               31.78:(7.3,DOWN*.1),33.58:(7.8,UP*.1),39.84:(7.5,ORIGIN),
-               43.32:(7.5,DOWN*.4),47.88:(8.5,ORIGIN)}
-        remaining=t-self.time
-        if t in shots and remaining>.18:
-            duration=min(.85,remaining)
-            if remaining-duration>.015:self.wait(remaining-duration)
-            width,center=shots[t]
-            self.play(self.camera.frame.animate.set_width(width).move_to(center),run_time=duration,rate_func=smooth)
-        elif remaining>.015:self.wait(remaining)
-    def title(self,s,kicker=''):
-        # Only the concept names remain; objects carry the explanation.
-        labels={'STACK':'STACK','LAST IN · FIRST OUT':'LIFO','QUEUE':'QUEUE'}
-        self.current_title=VGroup()
-        if s in labels:
-            self.current_title.add(self.text(labels[s],42,GREEN).move_to(UP*5.3))
-        return self.current_title
-    def transition(self,*new,dt=.35):
-        self.play(*[FadeOut(m,shift=LEFT*.22) for m in list(self.mobjects)],
-                  *[FadeIn(m,shift=RIGHT*.22) for m in new],
-                  self.camera.frame.animate.set_width(8.4).move_to(ORIGIN),run_time=dt)
     def panel(self,w,h):
-        shadows=VGroup(*[RoundedRectangle(width=w+.025*i,height=h+.025*i,corner_radius=.22+.012*i,
-            stroke_width=0,fill_color=BLACK,fill_opacity=.018).shift(DOWN*(.09+.009*i)) for i in range(14,0,-1)])
-        face=RoundedRectangle(width=w,height=h,corner_radius=.22,stroke_color='#385574',stroke_width=2,
-            fill_color=PANEL,fill_opacity=1)
-        highlight=Line(LEFT*(w/2-.25)+UP*(h/2-.03),RIGHT*(w/2-.25)+UP*(h/2-.03),color='#527391',stroke_width=1,stroke_opacity=.45)
-        return VGroup(shadows,face,highlight)
-    def key(self,s,w=2):
-        return VGroup(self.panel(w,.75),self.text(s,26)).set_z_index(5)
-    def block(self,s,color=BLUE,w=4.7):
-        shadow=VGroup(*[RoundedRectangle(width=w+.02*i,height=.85+.02*i,corner_radius=.14+.01*i,
-            stroke_width=0,fill_color=BLACK,fill_opacity=.025).shift(DOWN*(.1+.008*i)) for i in range(10,0,-1)])
-        box=RoundedRectangle(width=w,height=.85,corner_radius=.14,stroke_color=color,
-            stroke_width=2,fill_color='#19324A',fill_opacity=1)
-        accent=Line(LEFT*(w/2-.1)+DOWN*.24,LEFT*(w/2-.1)+UP*.24,color=color,stroke_width=4)
-        return VGroup(shadow,box,accent,self.text(s,29,color))
-    def plate(self,color=BLUE):
-        shadow=VGroup(*[Ellipse(width=5.3+i*.045,height=.92+i*.025,stroke_width=0,
-            fill_color=BLACK,fill_opacity=.022).shift(DOWN*(.26+i*.008)) for i in range(12,0,-1)])
-        lower=Ellipse(width=5.7,height=1.25,fill_color=color,fill_opacity=.65,stroke_color=color).shift(DOWN*.18)
-        edge=Ellipse(width=5.7,height=1.25,fill_color='#172B42',fill_opacity=1,stroke_color=color,stroke_width=3)
-        face=Ellipse(width=5.45,height=1.1,fill_color='#25445E',fill_opacity=1,stroke_color=color,stroke_width=1.5).shift(UP*.035)
-        rim=Ellipse(width=4.25,height=.74,stroke_color=color,stroke_opacity=.65,stroke_width=2,fill_color=color,fill_opacity=.12).shift(UP*.04)
-        shine=Arc(radius=1,start_angle=.15,angle=1.1,color=INK,stroke_opacity=.7,stroke_width=3).stretch_to_fit_width(1.5).stretch_to_fit_height(.12).move_to(LEFT*1.45+UP*.35)
-        return VGroup(shadow,lower,edge,face,rim,shine)
-    def person(self,color):
-        head=Circle(radius=.19,fill_color=color,fill_opacity=1,stroke_width=0).shift(UP*.55)
-        body=RoundedRectangle(width=.55,height=.62,corner_radius=.17,fill_color=color,fill_opacity=.85,stroke_width=0).shift(UP*.05)
-        legs=VGroup(Line(LEFT*.13+DOWN*.2,LEFT*.15+DOWN*.68,color=color,stroke_width=8),Line(RIGHT*.13+DOWN*.2,RIGHT*.15+DOWN*.68,color=color,stroke_width=8))
-        return VGroup(head,body,legs)
+        shadow=VGroup(*[RoundedRectangle(width=w+i*.025,height=h+i*.025,corner_radius=.18,
+            stroke_width=0,fill_color=BLACK,fill_opacity=.025).shift(DOWN*(.12+i*.008)) for i in range(8,0,-1)])
+        return VGroup(shadow,RoundedRectangle(width=w,height=h,corner_radius=.18,
+            stroke_color=BLUE,stroke_opacity=.45,stroke_width=2,fill_color=PANEL,fill_opacity=1))
+    def plate(self,i,n):
+        color=GREEN if i==n-1 else BLUE
+        shadow=Ellipse(width=6.2,height=1.3,stroke_width=0,fill_color=BLACK,fill_opacity=.2).shift(DOWN*.18)
+        base=Ellipse(width=6,height=1.25,fill_color=color,fill_opacity=.55,stroke_color=color).shift(DOWN*.14)
+        face=Ellipse(width=6,height=1.25,fill_color=PANEL,fill_opacity=1,stroke_color=color,stroke_width=3)
+        rim=Ellipse(width=4.6,height=.8,fill_color=color,fill_opacity=.12,stroke_color=color,stroke_width=1.5)
+        shine=Arc(radius=1,start_angle=.2,angle=1.2,color=WHITE,stroke_opacity=.65,stroke_width=3).stretch_to_fit_width(1.6).stretch_to_fit_height(.13).move_to(LEFT*1.5+UP*.36)
+        return VGroup(shadow,base,face,rim,shine)
+    def person(self,label,color):
+        head=Circle(radius=.2,fill_color=color,fill_opacity=1,stroke_width=0).shift(UP*.55)
+        body=RoundedRectangle(width=.6,height=.65,corner_radius=.18,fill_color=color,fill_opacity=1,stroke_width=0)
+        legs=VGroup(*[Line(RIGHT*x+DOWN*.2,RIGHT*x+DOWN*.7,color=color,stroke_width=7) for x in [-.16,.16]])
+        return VGroup(head,body,legs,self.label(label,20,color).move_to(DOWN*1.1))
+    def build(self,shot):
+        kind=shot['kind'];items=shot['items'];n=len(items)
+        objects=[];decor=VGroup()
+        if kind=='plates':
+            for i in range(n):objects.append(self.plate(i,n).move_to(UP*(-1.8+i*.53)))
+            decor.add(Line(LEFT*3.5+DOWN*2.65,RIGHT*3.5+DOWN*2.65,color=BLUE,stroke_opacity=.4))
+            decor.add(Ellipse(width=7.1,height=.85,fill_color=BLACK,fill_opacity=.22,stroke_width=0).move_to(DOWN*2.7))
+        elif kind in ['stack','calls']:
+            for i,item in enumerate(items):
+                color=GREEN if i==n-1 else BLUE
+                top=Polygon(LEFT*2.7+UP*.44,RIGHT*2.7+UP*.44,RIGHT*2.9+UP*.64,LEFT*2.5+UP*.64,fill_color=color,fill_opacity=.3,stroke_color=color,stroke_width=1)
+                side=Polygon(RIGHT*2.7+DOWN*.44,RIGHT*2.9+DOWN*.24,RIGHT*2.9+UP*.64,RIGHT*2.7+UP*.44,fill_color=color,fill_opacity=.2,stroke_color=color,stroke_width=1)
+                obj=VGroup(top,side,self.panel(5.4,.88),self.label(item,30,color))
+                obj.move_to(UP*((i-(n-1)/2)*1.05));objects.append(obj)
+            if kind=='calls':
+                for i in range(n-1):decor.add(CurvedArrow(objects[i].get_right()+RIGHT*.2,objects[i+1].get_right()+RIGHT*.2,angle=PI/2,color=GREEN,stroke_width=2))
+            decor.add(Line(LEFT*3+DOWN*(n*.53+.3),RIGHT*3+DOWN*(n*.53+.3),color=BLUE))
+        elif kind=='editor':
+            decor.add(self.panel(7,4),Line(LEFT*3.2+UP*1.1,RIGHT*3.2+UP*1.1,color=BLUE,stroke_opacity=.35))
+            decor.add(VGroup(*[Dot(radius=.055,color=c) for c in ['#FF748C','#FFBF69',GREEN]]).arrange(RIGHT,buff=.12).move_to(LEFT*2.85+UP*1.55))
+            keyboard=VGroup(*[RoundedRectangle(width=.48,height=.33,corner_radius=.05,stroke_color=BLUE,stroke_opacity=.3,fill_color=PANEL,fill_opacity=1).move_to(RIGHT*((j-4)*.58)+DOWN*(3.35+i*.43)) for i in range(3) for j in range(9)])
+            decor.add(keyboard)
+            snapshots=n>1 and any(len(item)>1 for item in items)
+            for i,item in enumerate(items):objects.append(self.label(item,62))
+            if not snapshots:
+                row=VGroup(*objects).arrange(RIGHT,buff=.2)
+                if row.width>6:row.scale_to_fit_width(6)
+                row.move_to(ORIGIN)
+            decor.add(self.label('Ctrl + Z',24,BLUE).move_to(DOWN*2.9))
+        elif kind=='browser':
+            for i,item in enumerate(items):
+                content=VGroup(RoundedRectangle(width=1.5,height=1.3,corner_radius=.1,fill_color=BLUE,fill_opacity=.18,stroke_width=0).move_to(LEFT*1.9+DOWN*.3),*[Line(LEFT*.5+DOWN*(.05+j*.32),RIGHT*(2.35-j*.25)+DOWN*(.05+j*.32),stroke_color=BLUE,stroke_opacity=.3,stroke_width=5) for j in range(3)])
+                card=VGroup(self.panel(6.3,3.6),self.label(item,30).move_to(UP*.85),content,
+                    VGroup(*[Dot(radius=.055,color=c) for c in ['#FF748C','#FFBF69',GREEN]]).arrange(RIGHT,buff=.12).move_to(LEFT*2.6+UP*1.4))
+                card.move_to(RIGHT*(i-(n-1)/2)*.2+UP*(i-(n-1)/2)*.2);objects.append(card)
+            decor.add(self.label('←',48,BLUE).move_to(DOWN*3))
+        elif kind=='queue':
+            for i,item in enumerate(items):objects.append(self.person(item,GREEN if i==0 else BLUE).move_to(RIGHT*((i-(n-1)/2)*min(1.7,7/n))))
+            decor.add(Arrow(RIGHT*3.2+DOWN*2.2,LEFT*3.2+DOWN*2.2,color=GREEN))
+            decor.add(DashedLine(LEFT*3.6+DOWN*.85,RIGHT*3.6+DOWN*.85,dash_length=.16,color=BLUE,stroke_opacity=.25))
+        elif kind=='expression':
+            for item in items:
+                objects.append(VGroup(Circle(radius=.65,fill_color=PANEL,fill_opacity=1,stroke_color=BLUE),self.label(item,42)))
+            row=VGroup(*objects).arrange(RIGHT,buff=.4)
+            if row.width>7:row.scale_to_fit_width(7)
+            row.move_to(ORIGIN)
+            decor.add(Arc(radius=2,start_angle=PI,angle=PI,color=BLUE,stroke_opacity=.2).stretch_to_fit_height(.8).shift(DOWN*1.3))
+        else:
+            composition=shot.get('composition','orbit')
+            for i,item in enumerate(items):
+                if composition=='orbit' and n<=5:
+                    angle=PI/2-i*TAU/n
+                    position=np.array([2.5*np.cos(angle),2.5*np.sin(angle),0])
+                elif composition=='split':position=RIGHT*((i%2)*3.7-1.85)+UP*((n//2-i//2)*2.4-1)
+                else:position=UP*((n-1)/2-i)*2.15
+                badge=VGroup(Circle(radius=.8,fill_color=PANEL,fill_opacity=1,stroke_color=BLUE,stroke_opacity=.5),self.icon(item,GREEN if i==n-1 else BLUE))
+                label=self.label(item,22).next_to(badge,DOWN,buff=.2)
+                if label.width>3:label.scale_to_fit_width(3)
+                objects.append(VGroup(badge,label).move_to(position))
+            for a,b in zip(objects,objects[1:]):decor.add(DashedLine(a.get_center(),b.get_center(),dash_length=.12,color=BLUE,stroke_opacity=.25).set_z_index(-1))
+        group=VGroup(decor,*objects)
+        max_h=10 if portrait else 6.4
+        if group.height>max_h:group.scale_to_fit_height(max_h)
+        if group.width>config.frame_width*.7:group.scale_to_fit_width(config.frame_width*.7)
+        return group,objects
+    def wait_to(self,t):
+        remaining=t-self.time
+        if remaining>.3:
+            self.play(self.camera.frame.animate.set_width(max(config.frame_width*.75,self.camera.frame.width*.985)),run_time=remaining,rate_func=linear)
+        elif remaining>.015:self.wait(remaining)
     def construct(self):
-        # Original narration, absolute timestamps from transcript.json.
-        title=self.title('A familiar shortcut')
-        screen=self.panel(7,4.6).move_to(UP*.7)
-        bar=Line(LEFT*3.2+UP*2.4,RIGHT*3.2+UP*2.4,color='#304867')
-        dots=VGroup(*[Dot(radius=.06,color=c) for c in [RED,GOLD,GREEN]]).arrange(RIGHT,buff=.13).move_to(LEFT*2.65+UP*2.7)
-        editor=VGroup(screen,bar,dots)
-        chars=VGroup(*[self.text(c,78) for c in 'HELLO']).arrange(RIGHT,buff=.08).move_to(UP*.65)
-        keys=VGroup(self.key('Ctrl'),self.key('+',.8),self.key('Z',1)).arrange(RIGHT,buff=.18).move_to(DOWN*3)
-        self.camera.frame.set_width(8.4)
-        self.add(title,editor)
-        self.until(.58)
-        self.play(LaggedStart(*[FadeIn(c,shift=UP*.12) for c in chars],lag_ratio=.14),run_time=.85)
-        self.until(1.64)
-        self.play(chars[-1].animate.set_color(RED),run_time=.18)
-        self.play(FadeOut(chars[-1],shift=DOWN*.5),run_time=.46)
-        self.until(3.08)
-        self.play(FadeIn(keys),run_time=.32)
-        self.until(4.16)
-        self.play(Indicate(keys[2],color=GREEN),FadeIn(chars[-1],shift=UP*.5),run_time=.5)
-        self.play(chars[-1].animate.set_color(INK),run_time=.16)
-        self.until(4.88)
-        check=VGroup(Circle(radius=.45,color=GREEN),VMobject(color=GREEN,stroke_width=5).set_points_as_corners([LEFT*.22,DOWN*.18,RIGHT*.25+UP*.22])).move_to(DOWN*4.5)
-        self.play(Create(check),run_time=.4)
-        self.until(5.68)
-        # Objects become a data stack, using the same motion as the physical model.
-        title=self.title('STACK')
-        blocks=VGroup(*[self.block(str(i+1),GREEN if i==2 else BLUE).move_to(DOWN*(2-i*1.12)) for i in range(3)])
-        rail=VGroup(Line(LEFT*2.7+DOWN*2.6,RIGHT*2.7+DOWN*2.6,color=DIM),Line(LEFT*2.7+DOWN*2.6,LEFT*2.7+UP*1.7,color=DIM),Line(RIGHT*2.7+DOWN*2.6,RIGHT*2.7+UP*1.7,color=DIM))
-        self.transition(title,rail)
-        for b in blocks:
-            target=b.get_center();b.shift(UP*3)
-            self.play(FadeIn(b),run_time=.14)
-            self.play(b.animate.move_to(target),run_time=.48,rate_func=smooth)
-        self.until(8.28)
-        lifo=self.text('LIFO',45,GREEN).move_to(UP*3.8)
-        self.play(FadeIn(lifo),run_time=.4)
-        self.until(9.72)
-        incoming=Arrow(UP*2.1+RIGHT*1.2,UP*.85+RIGHT*1.2,color=GREEN,buff=0)
-        self.play(GrowArrow(incoming),Indicate(blocks[-1],color=GREEN),run_time=.5)
-        self.until(10.34)
-        self.play(blocks[-1].animate.move_to(UP*2.7),Transform(incoming,Arrow(UP*.8+LEFT*1.2,UP*2+LEFT*1.2,color=GOLD,buff=0)),run_time=.6)
-        self.until(11.10)
-        # Stack of plates: newest plate arrives, then is removed first.
-        plates=VGroup(*[self.plate().move_to(DOWN*(2.5-i*.55)) for i in range(4)])
-        table=Line(LEFT*3.4+DOWN*3.2,RIGHT*3.4+DOWN*3.2,color=DIM)
-        self.transition(self.title('A stack of plates'),table)
-        self.play(LaggedStart(*[FadeIn(p,shift=DOWN*.3) for p in plates],lag_ratio=.13),run_time=.8)
-        self.until(12.88)
-        newest=self.plate(GREEN).move_to(UP*2.3)
-        self.play(FadeIn(newest),run_time=.3)
-        self.until(13.78)
-        self.play(newest.animate.move_to(DOWN*.3),run_time=.6)
-        self.until(14.68)
-        path=ArcBetweenPoints(newest.get_center(),RIGHT*4.8+UP*2.5,angle=-PI/3)
-        self.play(MoveAlongPath(newest,path),run_time=1.16)
-        self.remove(newest)
-        self.until(16)
-        # Undo history and the editor are animated together.
-        frame=self.panel(7.2,2.6).move_to(UP*2.6)
-        letters=VGroup(*[self.text(c,55) for c in 'ABC']).arrange(RIGHT,buff=.2).move_to(UP*2.6)
-        history=VGroup(*[self.block('Type '+c,GREEN if i==2 else BLUE).move_to(DOWN*(3-i*1.12)) for i,c in enumerate('ABC')])
-        arrow=Arrow(UP*1,DOWN*.15,color=DIM)
-        self.transition(self.title('Every edit has a history'),frame,arrow)
-        self.until(16.86)
-        for i in range(3):
-            self.play(FadeIn(letters[i]),FadeIn(history[i],shift=DOWN*.5),run_time=.52)
-        undo=self.key('Ctrl + Z',3).move_to(DOWN*5)
-        self.until(18.98)
-        self.play(FadeIn(undo),run_time=.35)
-        self.until(19.56)
-        curve=CurvedArrow(history[2].get_right(),frame.get_right()+LEFT*.5,angle=PI/2,color=GOLD)
-        self.play(Create(curve),history[2].animate.set_color(GOLD),run_time=.65)
-        self.play(FadeOut(history[2],shift=UP*.8),FadeOut(letters[2],shift=DOWN*.3),FadeOut(curve),run_time=.65)
-        self.until(22.16)
-        self.play(Indicate(undo,color=GOLD),run_time=.42)
-        self.until(22.78)
-        self.play(FadeOut(history[1],shift=UP*.8),FadeOut(letters[1],shift=DOWN*.3),run_time=.75)
-        self.until(23.76)
-        # Four applications, each activated when it is spoken.
-        tiles=VGroup(*[self.panel(3.65,3.6).move_to(np.array([x,y,0])) for x,y in [(-1.95,1.4),(1.95,1.4),(-1.95,-2.55),(1.95,-2.55)]])
-        labs=VGroup(*[self.text(s,23,DIM).move_to(t.get_center()+DOWN*1.2) for s,t in zip(['Undo','Browser','Function calls','Expressions'],tiles)])
-        self.transition(self.title('Stacks at work'),tiles,labs)
-        # undo drawing strokes
-        stroke1=Line(LEFT*.6,RIGHT*.5+UP*.5,color=BLUE,stroke_width=7)
-        stroke2=Line(RIGHT*.5+UP*.5,RIGHT*.65+DOWN*.35,color=GREEN,stroke_width=7)
-        pencil=VGroup(stroke1,stroke2).move_to(tiles[0].get_center()+UP*.25)
-        self.play(Create(pencil),run_time=.8)
-        self.until(25.76)
-        self.play(Uncreate(stroke2),tiles[0].animate.set_stroke(GREEN),run_time=.65)
-        self.until(26.68)
-        mini=VGroup(*[RoundedRectangle(width=2.3,height=1.3,corner_radius=.14,stroke_color=c,fill_color=c,fill_opacity=.35).shift(RIGHT*i*.13+UP*i*.13) for i,c in enumerate([BLUE,GREEN,GOLD])]).move_to(tiles[1].get_center()+UP*.25)
-        self.play(FadeIn(mini),run_time=.22)
-        self.play(FadeOut(mini[-1],shift=RIGHT*.4),tiles[1].animate.set_stroke(GREEN),run_time=.5)
-        self.until(27.74)
-        calls=VGroup(*[self.block(s,BLUE,w=2.5).scale(.7).move_to(tiles[2].get_center()+UP*(-.4+i*.55)) for i,s in enumerate(['main()','a()','b()'])])
-        self.play(LaggedStart(*[FadeIn(c,shift=DOWN*.2) for c in calls],lag_ratio=.2),tiles[2].animate.set_stroke(GREEN),run_time=.64)
-        self.until(28.6)
-        expr=self.text('2 + 3',35,BLUE).move_to(tiles[3].get_center()+UP*.3)
-        self.play(FadeIn(expr),run_time=.22)
-        self.play(Transform(expr,self.text('5',52,GREEN).move_to(expr)),tiles[3].animate.set_stroke(GREEN),run_time=.52)
-        self.until(29.88)
-        # Return to the mental model, with continuous plate movement.
-        plates=VGroup(*[self.plate(GREEN if i==3 else BLUE).move_to(DOWN*(2-i*.6)) for i in range(4)])
-        self.transition(self.title('LAST IN · FIRST OUT'),plates)
-        ring=Ellipse(width=5.4,height=1.5,color=GREEN).move_to(plates[-1])
-        self.play(Create(ring),run_time=.6)
-        self.until(31.78)
-        self.play(plates[-1].animate.shift(UP*2),ring.animate.shift(UP*2),run_time=.75)
-        self.until(33.58)
-        self.play(plates[-1].animate.shift(DOWN*2),ring.animate.shift(DOWN*2),run_time=.7)
-        self.play(Indicate(plates[-1],color=GREEN),run_time=.6)
-        self.until(35)
-        self.play(plates[-1].animate.shift(UP*1.8+RIGHT*2),FadeOut(ring),run_time=.8)
-        self.until(36.32)
-        # Newest vs oldest, then transform the stack into a FIFO line.
-        nodes=VGroup(*[self.block(str(i+1),GOLD if i==0 else GREEN if i==3 else BLUE,w=4).move_to(DOWN*(2.5-i*1.15)) for i in range(4)])
-        self.transition(self.title('What if the oldest goes first?'),nodes)
-        newest_label=self.text('NEWEST',23,GREEN).next_to(nodes[-1],UP,buff=.35)
-        oldest_label=self.text('OLDEST',23,GOLD).next_to(nodes[0],DOWN,buff=.35)
-        self.play(FadeIn(newest_label),FadeIn(oldest_label),run_time=.45)
-        question=self.text('?',90,GOLD).move_to(UP*3.7)
-        self.play(FadeIn(question),run_time=.5)
-        self.until(39.84)
-        self.play(Indicate(nodes[-1],color=GREEN),run_time=.65)
-        self.until(41.24)
-        self.play(nodes[-1].animate.shift(UP*.5),run_time=.4)
-        self.play(nodes[-1].animate.shift(DOWN*.5),run_time=.4)
-        self.until(43.32)
-        self.play(Indicate(nodes[0],color=GOLD),run_time=.7)
-        self.until(44.7)
-        self.play(FadeOut(question),FadeOut(newest_label),FadeOut(oldest_label),run_time=.3)
-        self.play(*[n.animate.scale(.38).move_to(LEFT*(2.7-i*1.8)+DOWN*.6) for i,n in enumerate(nodes)],run_time=.8)
-        people=VGroup(*[self.person(c).move_to(n.get_center()+UP*.65) for n,c in zip(nodes,[GOLD,BLUE,BLUE,GREEN])])
-        self.play(LaggedStart(*[FadeIn(p) for p in people],lag_ratio=.13),run_time=.65)
-        self.until(46.46)
-        flow=Arrow(RIGHT*3.2+DOWN*2.5,LEFT*3.2+DOWN*2.5,color=GOLD)
-        self.play(GrowArrow(flow),run_time=.6)
-        self.until(47.88)
-        # The queue reveal lands exactly on the spoken word "queue".
-        self.remove(self.current_title)
-        self.add(self.title('QUEUE','NEXT / FIRST IN · FIRST OUT'))
-        self.play(people[0].animate.shift(LEFT*3),nodes[0].animate.shift(LEFT*3),run_time=.65)
-        self.play(*[p.animate.shift(LEFT*1.1) for p in people[1:]],*[n.animate.shift(LEFT*1.1) for n in nodes[1:]],run_time=.6)
-        self.until(49.8)
-
+        self.background()
+        active=[]
+        for shot in PLAN['scenes']:
+            self.wait_to(shot['start'])
+            group,objects=self.build(shot)
+            home_positions=[obj.get_center().copy() for obj in objects]
+            home_shapes=[obj.copy() for obj in objects]
+            hidden={c['index'] for c in shot['cues'] if c['action']=='add'}
+            snapshots=shot['kind']=='editor' and len(shot['items'])>1 and any(len(item)>1 for item in shot['items'])
+            if snapshots:
+                visible=[i for i in range(len(objects)) if i not in hidden]
+                initial=visible[0] if any(c['action'] in ['add','advance'] for c in shot['cues']) else visible[-1] if visible else None
+                for i in visible:
+                    if i!=initial:objects[i].set_opacity(0)
+            for i in hidden:objects[i].set_opacity(0)
+            dt=min(.65,(shot['end']-shot['start'])/4)
+            width=config.frame_width*({'wide':.98,'close':.82,'tracking':.91}.get(shot.get('camera'),.91))
+            transition=shot.get('transition','match')
+            if active and transition=='match':
+                self.play(FadeTransform(active[0],group,stretch=False),self.camera.frame.animate.set_width(width).move_to(ORIGIN),run_time=dt)
+            else:
+                shift=RIGHT*.55 if transition=='slide' else UP*.2
+                self.play(*[FadeOut(m,shift=-shift) for m in active],
+                    LaggedStart(FadeIn(group[0]),*[FadeIn(obj,shift=DOWN*.35,scale=.9) for obj in objects],lag_ratio=.09),
+                    self.camera.frame.animate.set_width(width).move_to(ORIGIN),run_time=dt)
+                self.add(group)
+            active=[group]
+            for k,cue in enumerate(shot['cues']):
+                self.wait_to(cue['time'])
+                following=shot['cues'][k+1]['time'] if k+1<len(shot['cues']) else shot['end']
+                dt=min(.55,following-self.time-.015)
+                if dt<.04:continue
+                obj=objects[cue['index']];action=cue['action']
+                if action in ['add','restore'] or (snapshots and action=='advance'):
+                    extra=[other.animate.set_opacity(0) for other in objects if other is not obj] if snapshots else []
+                    obj.become(home_shapes[cue['index']]).move_to(home_positions[cue['index']]+UP*(.15 if snapshots else 1.5))
+                    curve=rate_functions.ease_out_back if ART.get('motion') in ['playful','bold'] else smooth
+                    self.play(obj.animate.move_to(home_positions[cue['index']]),*extra,run_time=dt,rate_func=curve)
+                elif action=='remove':
+                    motion=LEFT*1.6 if shot['kind']=='queue' else UP*1.2+RIGHT*.6
+                    extra=[objects[cue['index']-1].animate.set_opacity(1)] if snapshots and cue['index']>0 else []
+                    path=ArcBetweenPoints(obj.get_center(),obj.get_center()+motion,angle=-PI/4)
+                    self.play(MoveAlongPath(obj,path),*extra,run_time=dt*.65)
+                    self.play(obj.animate.set_opacity(0).scale(.82),run_time=dt*.35)
+                    if shot['kind']=='queue':
+                        survivors=[o for i,o in enumerate(objects) if i>cue['index']]
+                        if survivors:
+                            available=min(.3,following-self.time-.02)
+                            if available>.04:self.play(*[o.animate.shift(LEFT*.45) for o in survivors],run_time=available)
+                else:
+                    center=obj.get_center()*.08
+                    result=self.expression_value(shot['items']) if shot['kind']=='expression' else None
+                    if result is not None:
+                        answer=VGroup(Circle(radius=1,fill_color=PANEL,fill_opacity=1,stroke_color=GREEN,stroke_width=3),self.label(result,64,GREEN))
+                        self.play(*[o.animate.move_to(ORIGIN).set_opacity(0).scale(.6) for o in objects],GrowFromCenter(answer),
+                            self.camera.frame.animate.set_width(config.frame_width*.86).move_to(ORIGIN),run_time=dt)
+                        group.add(answer)
+                    else:
+                        self.play(Indicate(obj,color=GREEN,scale_factor=1.06),
+                            self.camera.frame.animate.set_width(config.frame_width*.86).move_to(center),run_time=dt)
+            self.wait_to(shot['end'])
+        self.wait_to(PLAN['duration'])
